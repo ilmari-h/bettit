@@ -1,0 +1,26 @@
+{{ define "thread" }}
+<div class="thread-post" >
+	<h3>{{ .ThreadTitle }}</h3>
+	<p class="prose">{{ .ThreadContent }}</p>
+	{{ if gt (len .Replies) 0 }}
+	<div class="replies">
+		{{ range .Replies }}
+		{{ template "comment" . }}
+		{{ end }}
+	</div>
+	{{ end }}
+</div>
+{{ end }}
+
+{{ define "comment" }}
+<div class="comment" id="{{ .CommentId }}" >
+	<p class="prose">{{ .CommentContent }}</p>
+	{{ if gt (len .Children) 0 }}
+	<div class="children">
+		{{ range .Children }}
+		{{ template "comment" . }}
+		{{ end }}
+	</div>
+	{{ end }}
+</div>
+{{ end }}
