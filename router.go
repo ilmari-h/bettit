@@ -89,10 +89,12 @@ func GettitRouter() *gin.Engine {
 			return
 		}
 
-		if _, err := txPostThread(subreddit, threadBytes, &c.Writer); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		if dbError := txPostThread(subreddit, threadBytes); dbError != nil {
+			log.Printf("TRYING TO LOG ERROR %v", dbError)
+			c.JSON(http.StatusBadRequest, gin.H{"message": dbError.Error()})
 		} else {
-			c.Status(http.StatusCreated)
+			redirectPage := templates.Lookup("redirect.tmpl").Lookup("redirect")
+			redirectPage.Execute(c.Writer, &RedirectTmpl{"http://localhost:8080/" + id})
 		}
 	})
 	return r

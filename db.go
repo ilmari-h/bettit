@@ -5,9 +5,7 @@ import (
 	"fmt"
 	"html"
 	"html/template"
-	"io/ioutil"
 	"log"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 	_ "github.com/mattn/go-sqlite3"
@@ -19,41 +17,15 @@ var templates *template.Template
 
 type DbError struct {
 	message string
-}
-
-// Thread type used in templates.
-//
-type ThreadTmpl struct {
-	ThreadTitle   string
-	ThreadContent template.HTML
-	Replies       []CommentTmpl
-}
-
-// Comment type used in templates.
-//
-type CommentTmpl struct {
-	CommentId      string
-	CommentContent template.HTML
-	Children       []CommentTmpl
+	details string
 }
 
 func (err *DbError) Error() string {
-	return err.message
-}
-
-func LoadTemplates() {
-	var allFiles []string
-	files, err := ioutil.ReadDir("./templates")
-	if err != nil {
-		fmt.Println(err)
+	errDisplay := err.message
+	if gin.IsDebugging() {
+		errDisplay += fmt.Sprintf(": %s", err.details)
 	}
-	for _, file := range files {
-		filename := file.Name()
-		if strings.HasSuffix(filename, ".tmpl") {
-			allFiles = append(allFiles, "./templates/"+filename)
-		}
-	}
-	templates, err = template.ParseFiles(allFiles...)
+	return errDisplay
 }
 
 func InitDatabase() {
@@ -67,12 +39,12 @@ func InitDatabase() {
 		CREATE TABLE IF NOT EXISTS threads (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			thread_id TEXT,
-			timestamp INTEGER,
+			replies_num INTEGER,
 			sub TEXT,
 			title TEXT,
 			content TEXT,
 			author TEXT,
-			CONSTRAINT unq UNIQUE(thread_id, timestamp)
+			CONSTRAINT unq UNIQUE(thread_id, replies_num)
 		);`,
 	); err != nil {
 		log.Fatalf("Error creating threads table: %s", err.Error())
@@ -135,13 +107,13 @@ func txPostComment(
 		VALUES ( ?, ?, ?, ? );
 	`); err != nil {
 		return nil, &DbError{
-			fmt.Sprintf("Error creating a new comment: %s", err.Error()),
+			"Error creating a new comment", err.Error(),
 		}
 	} else {
 		result, exErr := statement.Exec(content, author, threadId, parentStr)
 		if exErr != nil {
 			return nil, &DbError{
-				fmt.Sprintf("Error creating a new comment: %s", err.Error()),
+				"Error creating a new comment", err.Error(),
 			}
 		}
 		insertId, _ = result.LastInsertId()
@@ -173,72 +145,99 @@ func txPostComment(
 }
 
 // Post a new thread to the database and create a corresponding HTML file.
-// Returns the created html to send as a repsonse.
+// Writes the created HTML to disk.
 //
-// TODO: on error handling, only append internal details if in debug mode
-//
-func txPostThread(sub string, data []byte, writer *gin.ResponseWriter) (*template.Template, error) {
+func txPostThread(sub string, data []byte) error {
 
 	if db == nil {
 		panic("Database not open!")
 	}
-
-	tx, txErr := db.Begin()
-	if txErr != nil {
-		return nil, &DbError{
-			fmt.Sprintf("Error starting transaction on a new thread: %s", txErr.Error()),
-		}
-	}
-
 	// Add first post as thread.
 	thrBody := gjson.GetBytes(data, "0.data.children.0.data.selftext_html").String()
 	thrId := gjson.GetBytes(data, "0.data.children.0.data.id").String()
 	thrTitle := gjson.GetBytes(data, "0.data.children.0.data.title").String()
 	thrAuthor := gjson.GetBytes(data, "0.data.children.0.data.author").String()
+	thrRepliesNum := gjson.GetBytes(data, "0.data.children.0.data.num_comments").Int()
 
-	thrStmnt, stmntErr := tx.Prepare(`
-		INSERT INTO threads ( thread_id, timestamp, title, content, author, sub )
-		VALUES ( ?, ?, ?, ?, ?, ? );
-	`)
-
-	if stmntErr != nil {
-		tx.Rollback()
-		return nil, &DbError{
-			fmt.Sprintf("Error preparing new thread insert query: %s", stmntErr.Error()),
-		}
+	// Check that thread (with same or higher amount of posts) is not already archived.
+	rows, _ := db.Query(
+		`SELECT 1 FROM threads WHERE thread_id = ? AND replies_num >= ?`,
+		thrId,
+		thrRepliesNum,
+	)
+	if rows.Next() {
+		return &DbError{"Thread is already archived", ""}
 	}
 
-	_, thrExcErr := thrStmnt.Exec(thrId, 0, thrTitle, thrBody, thrAuthor, sub)
+	// Do heavy lifting in a separate goroutine.
+	go func() {
 
-	if thrExcErr != nil {
-		tx.Rollback()
-		return nil, &DbError{
-			fmt.Sprintf("Error executing new thread insert query: %s", thrExcErr.Error()),
+		//
+		// Do SQL transaction.
+		//
+
+		tx, txErr := db.Begin()
+		if txErr != nil {
+			return
+			//return &DbError{
+			//	"Error starting transaction on a new thread", txErr.Error(),
+			//}
 		}
-	}
 
-	log.Printf("Created a new thread. ID %s", thrId)
-	replies := []CommentTmpl{}
+		thrStmnt, stmntErr := tx.Prepare(`
+			INSERT INTO threads ( thread_id, replies_num, title, content, author, sub )
+			VALUES ( ?, ?, ?, ?, ?, ? );
+		`)
 
-	comments := gjson.GetBytes(data, "1.data.children")
-	for i := 0; i < int(comments.Get("#").Int()); i++ {
-		reply, bubbledError := txPostComment(tx, comments.Get(fmt.Sprintf("%d", i)), thrId, -1, 0, 100)
-		if bubbledError != nil {
+		if stmntErr != nil {
 			tx.Rollback()
-			return nil, bubbledError
+			return
+			//return &DbError{
+			//	"Error preparing new thread insert query", stmntErr.Error(),
+			//}
 		}
-		replies = append(replies, *reply)
-	}
 
-	tx.Commit()
+		_, thrExcErr := thrStmnt.Exec(thrId, thrRepliesNum, thrTitle, thrBody, thrAuthor, sub)
 
-	t := templates.Lookup("thread.tmpl").Lookup("thread")
+		if thrExcErr != nil {
+			tx.Rollback()
+			return
+			//return &DbError{
+			//	"Error executing new thread insert query: %s", thrExcErr.Error(),
+			//}
+		}
 
-	t.Execute(*writer, ThreadTmpl{
-		thrTitle,
-		template.HTML(html.UnescapeString(thrBody)),
-		replies,
-	})
+		log.Printf("Created a new thread. ID %s", thrId)
+		replies := []CommentTmpl{}
 
-	return nil, nil
+		comments := gjson.GetBytes(data, "1.data.children")
+		for i := 0; i < int(comments.Get("#").Int()); i++ {
+			reply, bubbledError := txPostComment(tx, comments.Get(fmt.Sprintf("%d", i)), thrId, -1, 0, 100)
+			if bubbledError != nil {
+				tx.Rollback()
+				return
+				//return bubbledError
+			}
+			replies = append(replies, *reply)
+		}
+
+		tx.Commit()
+
+		t := templates.Lookup("thread.tmpl").Lookup("thread")
+
+		//
+		// Write created html to file.
+		//
+
+		SavePage(
+			fmt.Sprintf("%s.html", thrId),
+			t,
+			ThreadTmpl{thrTitle,
+				template.HTML(html.UnescapeString(thrBody)),
+				replies,
+			},
+		)
+	}()
+
+	return nil
 }
