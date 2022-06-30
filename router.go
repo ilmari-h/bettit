@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"time"
 
@@ -47,7 +46,10 @@ func getThread(req *http.Request, c *gin.Context) ([]byte, *RouterError) {
 	}
 
 	if res.StatusCode != 200 {
-		log.Printf(fmt.Sprintf("Bad response to request at: %s. Status: %s", req.URL.Path, res.Status))
+		Log(
+			fmt.Sprintf("Bad response to request at: %s", req.URL.Path),
+			fmt.Sprintf("Status: %s", res.Status),
+		).Error()
 		return nil, &RouterError{code: res.StatusCode, message: "Recieved unsuccessful response from Reddit API."}
 	}
 
@@ -71,10 +73,11 @@ func GettitRouter() *gin.Engine {
 		id := c.Query("id")
 		thread := c.Query("thread")
 
-		requestUrl := fmt.Sprintf("https://reddit.com/r/%s/comments/%s/%s.json", subreddit, id, thread)
+		requestUrl := fmt.Sprintf("https://oauth.reddit.com/r/%s/comments/%s/%s.json", subreddit, id, thread)
 		req, err := http.NewRequest(http.MethodGet, requestUrl, nil)
 
-		req.Header.Set("User-Agent", "bettit-archive")
+		req.Header.Set("User-Agent", "Bettit-API/0.1, Archives for Reddit Threads")
+		req.Header.Set("Authorization", "bearer "+apiToken)
 
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
@@ -90,7 +93,6 @@ func GettitRouter() *gin.Engine {
 		}
 
 		if dbError := txPostThread(subreddit, threadBytes); dbError != nil {
-			log.Printf("TRYING TO LOG ERROR %v", dbError)
 			c.JSON(http.StatusBadRequest, gin.H{"message": dbError.Error()})
 		} else {
 			redirectPage := templates.Lookup("redirect.tmpl").Lookup("redirect")

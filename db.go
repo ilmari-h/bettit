@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"html"
 	"html/template"
-	"log"
 
 	"github.com/gin-gonic/gin"
 	_ "github.com/mattn/go-sqlite3"
@@ -32,7 +31,7 @@ func InitDatabase() {
 	openedDb, errOpen := sql.Open("sqlite3", "./bettit.db")
 	db = openedDb
 	if errOpen != nil {
-		log.Fatalf("Error opening database: %s", errOpen.Error())
+		Log("Error opening database", errOpen.Error()).Fatal()
 	}
 
 	if statement, err := db.Prepare(`
@@ -47,7 +46,7 @@ func InitDatabase() {
 			CONSTRAINT unq UNIQUE(thread_id, replies_num)
 		);`,
 	); err != nil {
-		log.Fatalf("Error creating threads table: %s", err.Error())
+		Log("Error creating threads table", err.Error()).Fatal()
 	} else {
 		statement.Exec()
 	}
@@ -63,7 +62,7 @@ func InitDatabase() {
 			FOREIGN KEY (parent_id) REFERENCES comments(id)
 		);`,
 	); err != nil {
-		log.Fatalf("Error creating comments table: %s", err.Error())
+		Log("Error creating comments table", err.Error()).Fatal()
 	} else {
 		statement.Exec()
 	}
@@ -71,7 +70,7 @@ func InitDatabase() {
 	if statement, err := db.Prepare(`
 		CREATE INDEX IF NOT EXISTS threads_id_index ON threads(thread_id)
 	`); err != nil {
-		log.Fatalf("Error creating database index: %s", err.Error())
+		Log("Error creating database index", err.Error()).Fatal()
 	} else {
 		statement.Exec()
 	}
@@ -88,7 +87,7 @@ func txPostComment(
 	threadId string,
 	parent int,
 	currentDepth int,
-	maxDepth int) (*CommentTmpl, error) {
+	maxDepth int) (*CommentTmpl, *DbError) {
 
 	if currentDepth == maxDepth {
 		return nil, nil
@@ -178,10 +177,10 @@ func txPostThread(sub string, data []byte) error {
 
 		tx, txErr := db.Begin()
 		if txErr != nil {
+			Log(
+				"Error starting transaction on a new thread", txErr.Error(),
+			).Error()
 			return
-			//return &DbError{
-			//	"Error starting transaction on a new thread", txErr.Error(),
-			//}
 		}
 
 		thrStmnt, stmntErr := tx.Prepare(`
@@ -191,23 +190,23 @@ func txPostThread(sub string, data []byte) error {
 
 		if stmntErr != nil {
 			tx.Rollback()
+			Log(
+				"Error preparing new thread insert query", stmntErr.Error(),
+			).Error()
 			return
-			//return &DbError{
-			//	"Error preparing new thread insert query", stmntErr.Error(),
-			//}
 		}
 
 		_, thrExcErr := thrStmnt.Exec(thrId, thrRepliesNum, thrTitle, thrBody, thrAuthor, sub)
 
 		if thrExcErr != nil {
 			tx.Rollback()
+			Log(
+				"Error executing new thread insert query", thrExcErr.Error(),
+			).Error()
 			return
-			//return &DbError{
-			//	"Error executing new thread insert query: %s", thrExcErr.Error(),
-			//}
 		}
 
-		log.Printf("Created a new thread. ID %s", thrId)
+		Log("Created a new thread. ID %s", thrId).Info()
 		replies := []CommentTmpl{}
 
 		comments := gjson.GetBytes(data, "1.data.children")
@@ -215,8 +214,10 @@ func txPostThread(sub string, data []byte) error {
 			reply, bubbledError := txPostComment(tx, comments.Get(fmt.Sprintf("%d", i)), thrId, -1, 0, 100)
 			if bubbledError != nil {
 				tx.Rollback()
+				Log(
+					bubbledError.message, bubbledError.details,
+				).Error()
 				return
-				//return bubbledError
 			}
 			replies = append(replies, *reply)
 		}
