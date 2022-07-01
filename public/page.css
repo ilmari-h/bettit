@@ -1,0 +1,73 @@
+body {
+  margin: 0;
+  font-family: arial, sans-serif;
+  font-size: 14px;
+}
+blockquote {
+  border-left: 4px solid gray;
+  background: whitesmoke;
+  padding: 6px;
+  margin: 10px 12px;
+}
+h1,
+h2,
+h3,
+h4,
+h5,
+p {
+  margin: 0;
+  padding: 0;
+}
+h5 {
+  font-size: 14px;
+}
+h5 {
+  font-style: normal;
+}
+.navbar {
+  padding: 4px 0px;
+  width: 100%;
+  background: darkgray;
+  color: white;
+  text-align: center;
+}
+
+.comment {
+  padding: 6px;
+  margin: 10px 4px;
+  overflow-x: auto;
+  border-left: 1px solid black;
+}
+
+.post-details {
+  margin: 0;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.thread-post {
+  margin: 10px 8px 8px 8px;
+}
+
+.toggle-button {
+  display: block;
+  margin-top: 6px;
+  cursor: pointer;
+}
+
+input {
+  display: none;
+}
+input + label {
+  font-family: monospace;
+  font-size: 12px;
+}
+input + label::after {
+  content: "[-]";
+}
+input:checked + label::after {
+  content: "[+]";
+}
+input:checked + label + .children {
+  display: none;
+}

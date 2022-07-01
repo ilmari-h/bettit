@@ -61,43 +61,54 @@ func getThread(req *http.Request, c *gin.Context) ([]byte, *RouterError) {
 	return body, nil
 }
 
+func routeArchive(c *gin.Context) {
+	subreddit := c.Query("sub")
+	id := c.Query("id")
+	thread := c.Query("thread")
+
+	requestUrl := fmt.Sprintf("https://oauth.reddit.com/r/%s/comments/%s/%s.json", subreddit, id, thread)
+	req, err := http.NewRequest(http.MethodGet, requestUrl, nil)
+
+	req.Header.Set("User-Agent", "Bettit-API/0.1, Archives for Reddit Threads")
+	req.Header.Set("Authorization", "bearer "+apiToken)
+
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+
+	threadBytes, tErr := getThread(req, c)
+	if tErr != nil {
+		c.JSON(tErr.Code(), gin.H{
+			"message": tErr.Error(),
+		})
+		return
+	}
+
+	if dbError := txPostThread(subreddit, threadBytes); dbError != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": dbError.Error()})
+	} else {
+		redirectPage := templates.Lookup("redirect.tmpl").Lookup("redirect")
+		redirectPage.Execute(c.Writer, &RedirectTmpl{"http://localhost:8080/" + id})
+	}
+}
+
+func routePage(c *gin.Context) {
+	threadId := c.Param("threadid")
+	if rerr := RenderThreadPage(threadId, c.Writer); rerr != nil {
+		c.Status(404)
+	} else {
+		c.Status(200)
+	}
+}
+
 func GettitRouter() *gin.Engine {
 
 	r := gin.Default()
 	r.GET("/health", func(c *gin.Context) {
 		c.String(http.StatusOK, "API is live.")
 	})
-	r.POST("/archive", func(c *gin.Context) {
-
-		subreddit := c.Query("sub")
-		id := c.Query("id")
-		thread := c.Query("thread")
-
-		requestUrl := fmt.Sprintf("https://oauth.reddit.com/r/%s/comments/%s/%s.json", subreddit, id, thread)
-		req, err := http.NewRequest(http.MethodGet, requestUrl, nil)
-
-		req.Header.Set("User-Agent", "Bettit-API/0.1, Archives for Reddit Threads")
-		req.Header.Set("Authorization", "bearer "+apiToken)
-
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
-			return
-		}
-
-		threadBytes, tErr := getThread(req, c)
-		if tErr != nil {
-			c.JSON(tErr.Code(), gin.H{
-				"message": tErr.Error(),
-			})
-			return
-		}
-
-		if dbError := txPostThread(subreddit, threadBytes); dbError != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"message": dbError.Error()})
-		} else {
-			redirectPage := templates.Lookup("redirect.tmpl").Lookup("redirect")
-			redirectPage.Execute(c.Writer, &RedirectTmpl{"http://localhost:8080/" + id})
-		}
-	})
+	r.POST("/archive", routeArchive)
+	r.GET("/:threadid", routePage)
 	return r
 }

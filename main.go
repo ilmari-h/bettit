@@ -78,5 +78,7 @@ func init() {
 func main() {
 	auth()
 	InitDatabase()
-	GettitRouter().Run()
+	r := GettitRouter()
+	r.Static("/res", "./public")
+	r.Run()
 }

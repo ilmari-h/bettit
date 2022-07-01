@@ -12,6 +12,8 @@
 !LICENSE
 !NOTICE
 !templates/*
+!debug.sh
+!public/*
 
 # !Makefile
 

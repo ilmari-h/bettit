@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"html"
 	"html/template"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	_ "github.com/mattn/go-sqlite3"
@@ -43,6 +44,8 @@ func InitDatabase() {
 			title TEXT,
 			content TEXT,
 			author TEXT,
+			timestamp INTEGER,
+			archive_timestamp INTEGER,
 			CONSTRAINT unq UNIQUE(thread_id, replies_num)
 		);`,
 	); err != nil {
@@ -58,6 +61,7 @@ func InitDatabase() {
 			author TEXT,
 			thread_id INTEGER,
 			parent_id INTEGER,
+			timestamp INTEGER,
 			FOREIGN KEY (thread_id) REFERENCES threads(id),
 			FOREIGN KEY (parent_id) REFERENCES comments(id)
 		);`,
@@ -78,6 +82,11 @@ func InitDatabase() {
 	LoadTemplates()
 }
 
+// TODO: this will be ran if no file is found.
+func queryReadThread(threadId string) *template.Template {
+	return nil
+}
+
 // Post a new comment to the database and all replies to it.
 // Recursive function.
 //
@@ -95,6 +104,7 @@ func txPostComment(
 
 	content := data.Get("data.body_html").String()
 	author := data.Get("data.author").String()
+	timestamp := data.Get("data.created").Int()
 	parentStr := "NULL"
 	if parent > -1 {
 		parentStr = fmt.Sprintf("%d", parent)
@@ -102,14 +112,14 @@ func txPostComment(
 
 	var insertId int64 = -1
 	if statement, err := tx.Prepare(`
-		INSERT INTO comments ( content, author, thread_id, parent_id )
-		VALUES ( ?, ?, ?, ? );
+		INSERT INTO comments ( content, author, thread_id, parent_id, timestamp )
+		VALUES ( ?, ?, ?, ?, ? );
 	`); err != nil {
 		return nil, &DbError{
 			"Error creating a new comment", err.Error(),
 		}
 	} else {
-		result, exErr := statement.Exec(content, author, threadId, parentStr)
+		result, exErr := statement.Exec(content, author, threadId, parentStr, timestamp)
 		if exErr != nil {
 			return nil, &DbError{
 				"Error creating a new comment", err.Error(),
@@ -140,6 +150,8 @@ func txPostComment(
 		fmt.Sprintf("reply-%d", insertId),
 		template.HTML(html.UnescapeString(content)),
 		repliesTmpl,
+		author,
+		time.Unix(int64(timestamp), 0).Format("02 Jan 2006"),
 	}, nil
 }
 
@@ -157,6 +169,7 @@ func txPostThread(sub string, data []byte) error {
 	thrTitle := gjson.GetBytes(data, "0.data.children.0.data.title").String()
 	thrAuthor := gjson.GetBytes(data, "0.data.children.0.data.author").String()
 	thrRepliesNum := gjson.GetBytes(data, "0.data.children.0.data.num_comments").Int()
+	thrTimestamp := gjson.GetBytes(data, "0.data.children.0.data.created").Int()
 
 	// Check that thread (with same or higher amount of posts) is not already archived.
 	rows, _ := db.Query(
@@ -184,8 +197,8 @@ func txPostThread(sub string, data []byte) error {
 		}
 
 		thrStmnt, stmntErr := tx.Prepare(`
-			INSERT INTO threads ( thread_id, replies_num, title, content, author, sub )
-			VALUES ( ?, ?, ?, ?, ?, ? );
+			INSERT INTO threads ( thread_id, replies_num, title, content, author, sub, timestamp, archive_timestamp )
+			VALUES ( ?, ?, ?, ?, ?, ?, ?, ? );
 		`)
 
 		if stmntErr != nil {
@@ -196,7 +209,7 @@ func txPostThread(sub string, data []byte) error {
 			return
 		}
 
-		_, thrExcErr := thrStmnt.Exec(thrId, thrRepliesNum, thrTitle, thrBody, thrAuthor, sub)
+		_, thrExcErr := thrStmnt.Exec(thrId, thrRepliesNum, thrTitle, thrBody, thrAuthor, sub, thrTimestamp, time.Now().Unix())
 
 		if thrExcErr != nil {
 			tx.Rollback()
@@ -206,7 +219,7 @@ func txPostThread(sub string, data []byte) error {
 			return
 		}
 
-		Log("Created a new thread. ID %s", thrId).Info()
+		Log("Created a new thread.", fmt.Sprintf("ID %s", thrId)).Info()
 		replies := []CommentTmpl{}
 
 		comments := gjson.GetBytes(data, "1.data.children")
@@ -230,14 +243,19 @@ func txPostThread(sub string, data []byte) error {
 		// Write created html to file.
 		//
 
-		SavePage(
+		err := SavePage(
 			fmt.Sprintf("%s.html", thrId),
 			t,
 			ThreadTmpl{thrTitle,
 				template.HTML(html.UnescapeString(thrBody)),
 				replies,
+				thrAuthor,
+				time.Unix(int64(thrTimestamp), 0).Format("02 Jan 2006"),
 			},
 		)
+		if err != nil {
+			Log("Error saving page", err.Error()).Error()
+		}
 	}()
 
 	return nil

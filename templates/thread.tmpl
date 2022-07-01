@@ -1,7 +1,10 @@
 {{ define "thread" }}
 <div class="thread-post" >
 	<h3>{{ .ThreadTitle }}</h3>
-	<p class="prose">{{ .ThreadContent }}</p>
+	<div class="post-details">
+		posted by <a href="https://www.reddit.com/user/{{.Author}}">u/{{.Author}}</a> on {{.Time}}
+	</div>
+	{{ .ThreadContent }}
 	{{ if gt (len .Replies) 0 }}
 	<div class="replies">
 		{{ range .Replies }}
@@ -14,8 +17,15 @@
 
 {{ define "comment" }}
 <div class="comment" id="{{ .CommentId }}" >
-	<p class="prose">{{ .CommentContent }}</p>
+	<div class="post-details">
+		posted by <a href="https://www.reddit.com/user/{{.Author}}">u/{{.Author}}</a> on {{.Time}}
+	</div>
+	<div class="prose">
+		{{ .CommentContent }}
+	</div>
 	{{ if gt (len .Children) 0 }}
+	<input checked type="checkbox" id="cb-{{.CommentId}}">
+	<label class="toggle-button" for="cb-{{.CommentId}}">{{ len .Children }} replies </label>
 	<div class="children">
 		{{ range .Children }}
 		{{ template "comment" . }}
@@ -23,4 +33,22 @@
 	</div>
 	{{ end }}
 </div>
+{{ end }}
+
+{{ define "archive" }}
+<!DOCTYPE html>
+<html>
+<head>
+	<link rel="stylesheet" href="res/page.css">
+	<title>{{.ThreadId}}</title>
+</head>
+<body>
+<div class="navbar">
+	<h5><b>Archive of thread <a href="https://reddit.com/{{.ThreadId}}">{{.ThreadId}}</a>, created on {{.ArchiveTime}}.</b></h5>
+</div>
+
+{{ .ThreadHTML }}
+
+</body>
+</html>
 {{ end }}
