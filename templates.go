@@ -32,6 +32,8 @@ type ArchiveTmpl struct {
 	ArchiveTime string
 	ThreadId    string
 	ThreadTitle string
+	ReplyId     string
+	Subreddit   string
 	ThreadHTML  template.HTML
 }
 
@@ -186,7 +188,7 @@ func RenderThreadPage(fileId string, w io.Writer) error {
 
 	}
 	rows, qErr := dbReadOnly.Query(`
-		SELECT archive_timestamp, title FROM threads
+		SELECT archive_timestamp, title, sub FROM threads
 		WHERE thread_id = ? AND continuing_reply = ?
 		ORDER BY archive_timestamp DESC
 		LIMIT 1`,
@@ -197,12 +199,13 @@ func RenderThreadPage(fileId string, w io.Writer) error {
 
 	archiveTimestamp := 0
 	threadTitle := ""
+	sub := ""
 	if qErr != nil {
 		Log("Error with thread query", qErr.Error()).Error()
 		return &DbError{"Error with thread query", qErr.Error()}
 	} else {
 		rows.Next()
-		rows.Scan(&archiveTimestamp, &threadTitle)
+		rows.Scan(&archiveTimestamp, &threadTitle, &sub)
 	}
 
 	if data, ferr := os.ReadFile(fpath); ferr != nil {
@@ -214,6 +217,8 @@ func RenderThreadPage(fileId string, w io.Writer) error {
 			time.Unix(int64(archiveTimestamp), 0).Format("02 Jan 2006"),
 			threadId,
 			threadTitle,
+			continuingReply,
+			sub,
 			template.HTML(html.UnescapeString(string(data))),
 		}
 		t.Execute(w, newPage)

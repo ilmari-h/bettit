@@ -47,9 +47,17 @@
 
 <div class="navbar">
 	<div class="navbar-left">
+		{{ if gt (len .ReplyId) 0 }}
+		<a href="/{{.ThreadId}}">Back</a>
+		{{ else }}
 		<a href="/">Index</a>
+		{{ end }}
 	</div>
-	<h5><b>Archive of thread <a href="https://reddit.com/{{.ThreadId}}">{{.ThreadId}}</a>, created on {{.ArchiveTime}}.</b></h5>
+	<h5><b>Archive of thread <a href="https://reddit.com/{{.ThreadId}}">{{.ThreadId}}</a>,
+	{{ if gt (len .ReplyId) 0 }}
+	reply <a href="https://www.reddit.com/r/{{.Subreddit}}/comments/{{.ThreadId}}/comment/{{.ReplyId}}">{{ .ReplyId }}</a>,
+	{{ end }}
+	created on {{.ArchiveTime}}.</b></h5>
 	<div class="navbar-right"></div>
 </div>
 
