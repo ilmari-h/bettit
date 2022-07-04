@@ -12,12 +12,12 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-var db *sql.DB
 var templates *template.Template
 var totalThreadsCreated = struct {
 	LastUpdated int64
 	Value       int
 }{0, 0}
+var dbReadOnly *sql.DB
 
 type DbError struct {
 	message string
@@ -33,8 +33,7 @@ func (err *DbError) Error() string {
 }
 
 func InitDatabase() {
-	openedDb, errOpen := sql.Open("sqlite3", "./bettit.db")
-	db = openedDb
+	db, errOpen := sql.Open("sqlite3", "./bettit.db")
 	if errOpen != nil {
 		Log("Error opening database", errOpen.Error()).Fatal()
 	}
@@ -98,12 +97,13 @@ func InitDatabase() {
 		statement.Exec()
 	}
 
+	dbReadOnly, _ = sql.Open("sqlite3", "file:./bettit.db?mode=rw&_busy_timeout=9999999")
 	LoadTemplates()
 }
 
 func queryLatestArchives(limit int) (error, []ArchiveLinkTmpl) {
 	results := []ArchiveLinkTmpl{}
-	if rowsLatest, qErr := db.Query(`
+	if rowsLatest, qErr := dbReadOnly.Query(`
 		SELECT archive_timestamp, thread_id, title, sub
 		FROM threads
 		WHERE continuing_reply = ""
@@ -132,8 +132,7 @@ func queryReadThread(threadId string) *template.Template {
 // Post a new comment to the database and all replies to it.
 // Recursive function.
 //
-func txPostComment(
-	tx *sql.Tx,
+func (dbtx *DbTransaction) txPostComment(
 	data gjson.Result,
 	threadId string,
 	sub string,
@@ -154,7 +153,7 @@ func txPostComment(
 	}
 
 	var insertId int64 = -1
-	if statement, err := tx.Prepare(`
+	if statement, err := dbtx.tx.Prepare(`
 		INSERT INTO comments ( content, author, thread_id, parent_id, timestamp )
 		VALUES ( ?, ?, ?, ?, ? );
 	`); err != nil {
@@ -186,7 +185,7 @@ func txPostComment(
 			if err != nil {
 				Log("Error requesting comment thread", err.Error())
 			} else {
-				txPostThread(tx, thrBytes, sub, commentId)
+				dbtx.txPostThread(thrBytes, sub, commentId)
 			}
 		}
 
@@ -200,8 +199,7 @@ func txPostComment(
 
 	} else if replCount := replies.Get("#").Int(); replies.Exists() && replies.IsArray() && replCount > 0 {
 		for i := 0; i < int(replCount); i++ {
-			reply, bubbledError := txPostComment(
-				tx,
+			reply, bubbledError := dbtx.txPostComment(
 				replies.Get(fmt.Sprintf("%d", i)),
 				threadId,
 				sub,
@@ -224,8 +222,9 @@ func txPostComment(
 	}, nil
 }
 
-func txPostThread(tx *sql.Tx, data []byte, sub string, continueReply string) error {
+func (dbtx *DbTransaction) txPostThread(data []byte, sub string, continueReply string) error {
 
+	db := dbtx.dbConnection
 	// Add first post as thread.
 	thrBody := gjson.GetBytes(data, "0.data.children.0.data.selftext_html").String()
 	thrBodyLink := gjson.GetBytes(data, "0.data.children.0.data.url_overridden_by_dest").String()
@@ -237,7 +236,7 @@ func txPostThread(tx *sql.Tx, data []byte, sub string, continueReply string) err
 	thrTimestamp := gjson.GetBytes(data, "0.data.children.0.data.created").Int()
 
 	// TODO overwrite if previous exists
-	thrStmnt, stmntErr := tx.Prepare(`
+	thrStmnt, stmntErr := dbtx.tx.Prepare(`
 		INSERT INTO threads (
 			thread_id,
 			continuing_reply,
@@ -287,7 +286,7 @@ func txPostThread(tx *sql.Tx, data []byte, sub string, continueReply string) err
 
 	comments := gjson.GetBytes(data, "1.data.children")
 	for i := 0; i < int(comments.Get("#").Int()); i++ {
-		reply, bubbledError := txPostComment(tx, comments.Get(fmt.Sprintf("%d", i)), thrId, sub, -1, 0, 100)
+		reply, bubbledError := dbtx.txPostComment(comments.Get(fmt.Sprintf("%d", i)), thrId, sub, -1, 0, 100)
 		if bubbledError != nil {
 			Log(
 				bubbledError.message, bubbledError.details,
@@ -330,6 +329,36 @@ func txPostThread(tx *sql.Tx, data []byte, sub string, continueReply string) err
 
 }
 
+type DbTransaction struct {
+	dbConnection *sql.DB
+	tx           *sql.Tx
+}
+
+func NewTransaction() (*DbTransaction, error) {
+	db, oerr := sql.Open("sqlite3", "file:./bettit.db?mode=rw&_busy_timeout=9999999")
+	db.SetMaxOpenConns(1)
+	if oerr != nil {
+		return nil, oerr
+	}
+	tx, berr := db.Begin()
+	if berr != nil {
+		return nil, berr
+	}
+	return &DbTransaction{
+		db,
+		tx,
+	}, nil
+}
+
+func (dbtx *DbTransaction) rollback() {
+	dbtx.tx.Rollback()
+	dbtx.dbConnection.Close()
+}
+func (dbtx *DbTransaction) done() {
+	dbtx.tx.Commit()
+	dbtx.dbConnection.Close()
+}
+
 // Post a new thread to the database and create a corresponding HTML file.
 // Writes the created HTML to disk.
 // If continueReply is not empty, the thread is a continuance of a comment thread,
@@ -337,16 +366,11 @@ func txPostThread(tx *sql.Tx, data []byte, sub string, continueReply string) err
 //
 func archiveThread(sub string, data []byte) error {
 
-	Log("CURRENT OPEN CONNECTIONS BEFORE", fmt.Sprintf("%d", db.Stats().InUse)).Info()
-	if db == nil {
-		panic("Database not open!")
-	}
-
 	thrId := gjson.GetBytes(data, "0.data.children.0.data.id").String()
 	thrRepliesNum := gjson.GetBytes(data, "0.data.children.0.data.num_comments").Int()
 
 	// Check that thread (with same or higher amount of posts) is not already archived.
-	rows, _ := db.Query(
+	rows, _ := dbReadOnly.Query(
 		`SELECT 1 FROM threads WHERE thread_id = ? AND replies_num >= ?`,
 		thrId,
 		thrRepliesNum,
@@ -359,14 +383,14 @@ func archiveThread(sub string, data []byte) error {
 
 	// Do heavy lifting in a separate goroutine.
 	go func() {
-		tx, txerr := db.Begin()
+		tx, txerr := NewTransaction()
 		if txerr != nil {
 			Log("Error starting transaction", txerr.Error()).Error()
 		}
-		if txPostThread(tx, data, sub, "") != nil {
-			tx.Rollback()
+		if tx.txPostThread(data, sub, "") != nil {
+			tx.rollback()
 		} else {
-			tx.Commit()
+			tx.done()
 		}
 	}()
 

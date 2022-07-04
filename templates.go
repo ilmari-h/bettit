@@ -145,7 +145,7 @@ func RenderIndexPage(w io.Writer) error {
 
 	// Do this query at most once a minute
 	if time.Now().Unix() > 60+totalThreadsCreated.LastUpdated {
-		rows, qErr := db.Query(`SELECT COUNT(DISTINCT thread_id) from threads`)
+		rows, qErr := dbReadOnly.Query(`SELECT COUNT(DISTINCT thread_id) from threads`)
 		defer rows.Close()
 		if qErr != nil {
 			Log("Error with thread count query", qErr.Error()).Error()
@@ -185,7 +185,7 @@ func RenderThreadPage(fileId string, w io.Writer) error {
 		continuingReply = fnameParts[1]
 
 	}
-	rows, qErr := db.Query(`
+	rows, qErr := dbReadOnly.Query(`
 		SELECT archive_timestamp, title FROM threads
 		WHERE thread_id = ? AND continuing_reply = ?
 		ORDER BY archive_timestamp DESC
