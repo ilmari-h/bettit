@@ -1,8 +1,45 @@
+{{ define "page" }}
+<!DOCTYPE html>
+<html>
+<head>
+	<link rel="stylesheet" href="res/index.css">
+	<title>Bettit - archived threads</title>
+</head>
+<body>
+<div class="navbar">
+	<h5><b>Redirected</b></h5>
+</div>
+
+{{ if .IsErr }}
+	{{ template "redirecterr" .Content }}
+{{ else }}
+	{{ template "redirect" .Content }}
+{{ end }}
+
+</body>
+</html>
+{{ end }}
+
 {{ define "redirect" }}
-<section>
-	<h3>Archive is being created</h3>
-	<div class="prompt">
-		It will be available in a moment at: {{ .CreatedUrl }}
+<section class="center">
+	<div>
+		<h3>Archive is being created</h3>
+		<div class="prompt">
+			It will be available in a moment at <a href="{{ .Url }}">{{ .Url }}</a>
+		</div>
+		<a href="/">Go back</a>
+	<div>
+</section>
+{{ end }}
+
+{{ define "redirecterr" }}
+<section class="center">
+	<div>
+		<h3>Archive already exists</h3>
+		<div class="prompt">
+			Archive exists at <a href="{{ .Url }}">{{ .Url }}</a>
+		</div>
+		<a href="/">Go back</a>
 	</div>
 </section>
 {{ end }}

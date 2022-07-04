@@ -1,0 +1,34 @@
+{{ define "index" }}
+<!DOCTYPE html>
+<html>
+<head>
+	<link rel="stylesheet" href="res/index.css">
+	<title>Bettit - archived threads</title>
+</head>
+<body>
+<div class="navbar">
+	<h5><b>Hosting a total of {{.TotalArchived}} archived threads.</b></h5>
+</div>
+
+<div class="center">
+	<form action="/archive" method="POST">
+		<input id="archivef" name="archivef" type="text" placeholder="Enter post url.">
+		<button>archive</button>
+	</form>
+	<div><table>
+		<tr>
+			<th>Recently archived:</th>
+		</tr>
+		{{ if gt (len .Latest) 0 }}
+			{{ range .Latest }}
+				<tr><td>
+					<strong>r/{{ .Subreddit }}</strong>: <a href="/{{ .ThreadId }}">{{ .ThreadTitle }}</a>
+				</td></tr>
+			{{ end }}
+		{{ end }}
+	</table></div>
+</div>
+
+</body>
+</html>
+{{ end }}

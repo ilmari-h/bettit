@@ -1,9 +1,10 @@
 {{ define "thread" }}
 <div class="thread-post" >
-	<h3>{{ .ThreadTitle }}</h3>
+	<h3><strong>r/{{.Subreddit}}</strong> {{ .ThreadTitle }}</h3>
 	<div class="post-details">
 		posted by <a href="https://www.reddit.com/user/{{.Author}}">u/{{.Author}}</a> on {{.Time}}
 	</div>
+	<a href="{{ .ThreadContentLink }}">{{ .ThreadContentLink }}</a>
 	{{ .ThreadContent }}
 	{{ if gt (len .Replies) 0 }}
 	<div class="replies">
@@ -24,7 +25,7 @@
 		{{ .CommentContent }}
 	</div>
 	{{ if gt (len .Children) 0 }}
-	<input checked type="checkbox" id="cb-{{.CommentId}}">
+	<input type="checkbox" id="cb-{{.CommentId}}">
 	<label class="toggle-button" for="cb-{{.CommentId}}">{{ len .Children }} replies </label>
 	<div class="children">
 		{{ range .Children }}
@@ -40,11 +41,16 @@
 <html>
 <head>
 	<link rel="stylesheet" href="res/page.css">
-	<title>{{.ThreadId}}</title>
+	<title>Archive: {{.ThreadTitle}}</title>
 </head>
 <body>
+
 <div class="navbar">
+	<div class="navbar-left">
+		<a href="/">Index</a>
+	</div>
 	<h5><b>Archive of thread <a href="https://reddit.com/{{.ThreadId}}">{{.ThreadId}}</a>, created on {{.ArchiveTime}}.</b></h5>
+	<div class="navbar-right"></div>
 </div>
 
 {{ .ThreadHTML }}

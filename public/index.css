@@ -1,0 +1,55 @@
+:root {
+  --accent-red: #754c4c;
+  --accent-fg: #d6d6d6;
+}
+
+body,
+html {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  font-family: arial, sans-serif;
+  font-size: 14px;
+}
+blockquote {
+  border-left: 4px solid gray;
+  background: whitesmoke;
+  padding: 6px;
+  margin: 10px 12px;
+}
+h1,
+h2,
+h3,
+h4,
+h5,
+p {
+  margin: 0;
+  padding: 0;
+}
+h5 {
+  font-size: 14px;
+}
+h5 {
+  font-style: normal;
+}
+.navbar {
+  background: var(--accent-red);
+  padding: 4px 0px;
+  width: 100%;
+  color: white;
+  text-align: center;
+}
+
+.center {
+  display: flex;
+  margin: auto;
+  margin-top: 20vh;
+  justify-content: center;
+  align-items: center;
+  flex-direction: column;
+}
+td {
+  max-width: 400px;
+}

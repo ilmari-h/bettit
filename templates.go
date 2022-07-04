@@ -12,32 +12,47 @@ import (
 	"time"
 )
 
-// Thread type used in templates.
 //
+// Types used in templates.
+//
+
+type IndexTmpl struct {
+	TotalArchived int
+	Latest        []ArchiveLinkTmpl // urls
+}
+
+type ArchiveLinkTmpl struct {
+	ArchiveTime int
+	ThreadId    string
+	ThreadTitle string
+	Subreddit   string
+}
+
 type ArchiveTmpl struct {
 	ArchiveTime string
 	ThreadId    string
+	ThreadTitle string
 	ThreadHTML  template.HTML
 }
 
-// Redirect page used in templates.
-//
+type RedirectPageTmpl struct {
+	IsErr   bool
+	Content RedirectTmpl
+}
 type RedirectTmpl struct {
-	CreatedUrl string
+	Url string
 }
 
-// Thread type used in templates.
-//
 type ThreadTmpl struct {
-	ThreadTitle   string
-	ThreadContent template.HTML
-	Replies       []CommentTmpl
-	Author        string
-	Time          string
+	ThreadTitle       string
+	ThreadContent     template.HTML
+	ThreadContentLink string
+	Subreddit         string
+	Replies           []CommentTmpl
+	Author            string
+	Time              string
 }
 
-// Comment type used in templates.
-//
 type CommentTmpl struct {
 	CommentId      string
 	CommentContent template.HTML
@@ -115,26 +130,79 @@ func SavePage(fname string, tmpl *template.Template, data any) error {
 	return nil
 }
 
-func RenderThreadPage(threadId string, w io.Writer) error {
-	fname := threadId + ".html"
+func RenderRedirectPage(err bool, url string, w io.Writer) {
+	tp := templates.Lookup("redirect.tmpl").Lookup("page")
+	tp.Execute(w, RedirectPageTmpl{
+		err,
+		RedirectTmpl{
+			Url: url,
+		},
+	})
+}
+
+func RenderIndexPage(w io.Writer) error {
+	count := 0
+
+	// Do this query at most once a minute
+	if time.Now().Unix() > 60+totalThreadsCreated.LastUpdated {
+		rows, qErr := db.Query(`SELECT COUNT(DISTINCT thread_id) from threads`)
+		defer rows.Close()
+		if qErr != nil {
+			Log("Error with thread count query", qErr.Error()).Error()
+			return &DbError{"Error with thread count query", qErr.Error()}
+		}
+		rows.Next()
+		rows.Scan(&count)
+		totalThreadsCreated.LastUpdated = time.Now().Unix()
+		totalThreadsCreated.Value = count
+	} else {
+		count = totalThreadsCreated.Value
+	}
+
+	err, latestCreated := queryLatestArchives(10)
+	if err != nil {
+		return err
+	}
+
+	t := templates.Lookup("index.tmpl").Lookup("index")
+	t.Execute(w, IndexTmpl{count, latestCreated})
+	return nil
+}
+
+func RenderThreadPage(fileId string, w io.Writer) error {
+	fname := fileId + ".html"
 	fpath, err := getRenderFilePath(fname)
 	if err != nil {
 		Log("Error getting render file path", err.Error()).Error()
 		return err
 	}
+	fnameParts := strings.Split(fileId, "-")
+	threadId := fnameParts[0]
+	continuingReply := ""
 
-	rows, qErr := db.Query(
-		`SELECT archive_timestamp FROM threads WHERE thread_id = ?`,
+	// If thread is part of a longer comment thread the comment's ID will be the second element.
+	if len(fnameParts) > 1 {
+		continuingReply = fnameParts[1]
+
+	}
+	rows, qErr := db.Query(`
+		SELECT archive_timestamp, title FROM threads
+		WHERE thread_id = ? AND continuing_reply = ?
+		ORDER BY archive_timestamp DESC
+		LIMIT 1`,
 		threadId,
+		continuingReply,
 	)
+	defer rows.Close()
 
 	archiveTimestamp := 0
+	threadTitle := ""
 	if qErr != nil {
 		Log("Error with thread query", qErr.Error()).Error()
 		return &DbError{"Error with thread query", qErr.Error()}
 	} else {
 		rows.Next()
-		rows.Scan(&archiveTimestamp)
+		rows.Scan(&archiveTimestamp, &threadTitle)
 	}
 
 	if data, ferr := os.ReadFile(fpath); ferr != nil {
@@ -145,6 +213,7 @@ func RenderThreadPage(threadId string, w io.Writer) error {
 		newPage := ArchiveTmpl{
 			time.Unix(int64(archiveTimestamp), 0).Format("02 Jan 2006"),
 			threadId,
+			threadTitle,
 			template.HTML(html.UnescapeString(string(data))),
 		}
 		t.Execute(w, newPage)

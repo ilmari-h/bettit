@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -31,7 +33,7 @@ func (err *RouterError) Code() int {
 	return err.code
 }
 
-func getThread(req *http.Request, c *gin.Context) ([]byte, *RouterError) {
+func getThread(req *http.Request) ([]byte, *RouterError) {
 
 	client := http.Client{
 		Timeout: time.Second * 5,
@@ -61,40 +63,67 @@ func getThread(req *http.Request, c *gin.Context) ([]byte, *RouterError) {
 	return body, nil
 }
 
-func routeArchive(c *gin.Context) {
-	subreddit := c.Query("sub")
-	id := c.Query("id")
-	thread := c.Query("thread")
+func routeIndex(c *gin.Context) {
+	RenderIndexPage(c.Writer)
+	c.Status(200)
+}
 
-	requestUrl := fmt.Sprintf("https://oauth.reddit.com/r/%s/comments/%s/%s.json", subreddit, id, thread)
+func NewThreadRequest(sub string, threadId string, commentId string) (*http.Request, error) {
+
+	requestUrl := fmt.Sprintf("https://oauth.reddit.com/r/%s/comments/%s.json", sub, threadId)
+	if commentId != "" {
+		requestUrl = fmt.Sprintf("https://oauth.reddit.com/r/%s/comments/%s/comment/%s.json", sub, threadId, commentId)
+	}
 	req, err := http.NewRequest(http.MethodGet, requestUrl, nil)
-
 	req.Header.Set("User-Agent", "Bettit-API/0.1, Archives for Reddit Threads")
 	req.Header.Set("Authorization", "bearer "+apiToken)
 
+	// Validate request correctness.
+	if req.Host != "oauth.reddit.com" {
+		Log("Incorrect API request attempt", requestUrl).Error()
+		return nil, &RouterError{code: http.StatusBadRequest, message: ""}
+	}
+
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		Log("Error forming API request.", err.Error()).Error()
+		return nil, &RouterError{code: http.StatusBadRequest, message: ""}
+	}
+	return req, nil
+}
+
+func routeArchive(c *gin.Context) {
+	input := c.PostForm("archivef")
+
+	// Parse an API request based on input
+	url, _ := url.Parse(input)
+	urlParts := strings.Split(url.Path, "/")
+
+	subreddit := urlParts[2]
+	id := urlParts[4]
+
+	req, err := NewThreadRequest(subreddit, id, "")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{})
 		return
 	}
 
-	threadBytes, tErr := getThread(req, c)
+	threadBytes, tErr := getThread(req)
 	if tErr != nil {
-		c.JSON(tErr.Code(), gin.H{
-			"message": tErr.Error(),
-		})
+		Log("Error reading thread template", err.Error()).Error()
+		c.JSON(tErr.Code(), gin.H{})
 		return
 	}
 
-	if dbError := txPostThread(subreddit, threadBytes); dbError != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"message": dbError.Error()})
+	if dbError := archiveThread(subreddit, threadBytes); dbError != nil {
+		RenderRedirectPage(true, "http://localhost:8080/"+id, c.Writer)
 	} else {
-		redirectPage := templates.Lookup("redirect.tmpl").Lookup("redirect")
-		redirectPage.Execute(c.Writer, &RedirectTmpl{"http://localhost:8080/" + id})
+		RenderRedirectPage(false, "http://localhost:8080/"+id, c.Writer)
 	}
 }
 
 func routePage(c *gin.Context) {
 	threadId := c.Param("threadid")
+
 	if rerr := RenderThreadPage(threadId, c.Writer); rerr != nil {
 		c.Status(404)
 	} else {
@@ -105,10 +134,11 @@ func routePage(c *gin.Context) {
 func GettitRouter() *gin.Engine {
 
 	r := gin.Default()
+	r.GET("/", routeIndex)
 	r.GET("/health", func(c *gin.Context) {
 		c.String(http.StatusOK, "API is live.")
 	})
-	r.POST("/archive", routeArchive)
 	r.GET("/:threadid", routePage)
+	r.POST("/archive", routeArchive)
 	return r
 }

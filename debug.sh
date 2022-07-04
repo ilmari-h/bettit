@@ -1,2 +1,2 @@
 #!/bin/sh
-rm -f bettit.db && source ./.env && go build && ./bettit
+rm -f bettit.db && rm -rf ./archive/* && source ./.env && go build && ./bettit
