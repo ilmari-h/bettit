@@ -23,6 +23,13 @@ func Log(message string, detail string) *log.Entry {
 	})
 }
 
+func LogE(e *DbError) {
+	log.WithFields(log.Fields{
+		"message": e.message,
+		"detail":  e.details,
+	}).Error()
+}
+
 func auth() {
 	username := os.Getenv("REDDIT_APP_DEV_NAME")
 	password := os.Getenv("REDDIT_APP_DEV_PW")

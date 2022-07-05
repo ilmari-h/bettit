@@ -24,14 +24,16 @@
 	<div class="prose">
 		{{ .CommentContent }}
 	</div>
-	{{ if gt (len .Children) 0 }}
-	<input type="checkbox" id="cb-{{.CommentId}}">
-	<label class="toggle-button" for="cb-{{.CommentId}}">{{ len .Children }} replies </label>
-	<div class="children">
-		{{ range .Children }}
-		{{ template "comment" . }}
-		{{ end }}
-	</div>
+	{{ if .Continues }}
+		<a class="continue-thread" href="/{{ .ThreadId }}-{{ .CommentId }}">Continue -></a>
+	{{ else if gt (len .Children) 0 }}
+		<input type="checkbox" id="cb-{{.CommentId}}">
+		<label class="toggle-button" for="cb-{{.CommentId}}">{{ len .Children }} replies </label>
+		<div class="children">
+			{{ range .Children }}
+			{{ template "comment" . }}
+			{{ end }}
+		</div>
 	{{ end }}
 </div>
 {{ end }}

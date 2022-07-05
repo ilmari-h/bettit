@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"database/sql"
 	"fmt"
 	"html"
@@ -65,12 +66,14 @@ func InitDatabase() {
 	if statement, err := db.Prepare(`
 		CREATE TABLE IF NOT EXISTS comments (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			comment_id TEXT,
 			content TEXT,
 			author TEXT,
-			thread_id INTEGER,
+			thread_key INTEGER,
 			parent_id INTEGER,
 			timestamp INTEGER,
-			FOREIGN KEY (thread_id) REFERENCES threads(id),
+			continues BOOLEAN,
+			FOREIGN KEY (thread_key) REFERENCES threads(id),
 			FOREIGN KEY (parent_id) REFERENCES comments(id)
 		);`,
 	); err != nil {
@@ -135,18 +138,22 @@ func queryReadThread(threadId string) *template.Template {
 func (dbtx *DbTransaction) txPostComment(
 	data gjson.Result,
 	threadId string,
+	threadKey int64,
 	sub string,
 	parent int,
 	currentDepth int,
-	maxDepth int) (*CommentTmpl, *DbError) {
+	maxDepth int) *DbError {
 
 	if currentDepth == maxDepth {
-		return nil, nil
+		return nil
 	}
 
 	content := data.Get("data.body_html").String()
 	author := data.Get("data.author").String()
 	timestamp := data.Get("data.created").Int()
+	replies := data.Get("data.replies.data.children")
+	loadMore := replies.Get("0.kind").String() == "more"
+	commentId := data.Get("data.id").String()
 	parentStr := "NULL"
 	if parent > -1 {
 		parentStr = fmt.Sprintf("%d", parent)
@@ -154,27 +161,23 @@ func (dbtx *DbTransaction) txPostComment(
 
 	var insertId int64 = -1
 	if statement, err := dbtx.tx.Prepare(`
-		INSERT INTO comments ( content, author, thread_id, parent_id, timestamp )
-		VALUES ( ?, ?, ?, ?, ? );
+		INSERT INTO comments ( comment_id, content, author, thread_key, parent_id, timestamp, continues )
+		VALUES ( ?, ?, ?, ?, ?, ?, ? );
 	`); err != nil {
-		return nil, &DbError{
+		return &DbError{
 			"Error creating a new comment", err.Error(),
 		}
 	} else {
-		result, exErr := statement.Exec(content, author, threadId, parentStr, timestamp)
+		result, exErr := statement.Exec(commentId, content, author, threadKey, parentStr, timestamp, loadMore)
 		if exErr != nil {
-			return nil, &DbError{
+			return &DbError{
 				"Error creating a new comment", err.Error(),
 			}
 		}
 		insertId, _ = result.LastInsertId()
 	}
-	replies := data.Get("data.replies.data.children")
-	loadMore := replies.Get("0.kind").String() == "more"
-	commentId := data.Get("data.id").String()
 
 	// Continues in another thread / page for the same post.
-	repliesTmpl := []CommentTmpl{}
 	if loadMore {
 
 		// Create a new thread from the comment as part of this transaction.
@@ -189,40 +192,26 @@ func (dbtx *DbTransaction) txPostComment(
 			}
 		}
 
-		repliesTmpl = append(repliesTmpl, CommentTmpl{
-			fmt.Sprintf("reply-%d-more", insertId),
-			template.HTML(fmt.Sprintf(`<a class="continue-thread" href="/%s-%s">Continue -></a>`, threadId, commentId)),
-			[]CommentTmpl{},
-			"",
-			time.Unix(int64(timestamp), 0).Format("02 Jan 2006"),
-		})
-
 	} else if replCount := replies.Get("#").Int(); replies.Exists() && replies.IsArray() && replCount > 0 {
 		for i := 0; i < int(replCount); i++ {
-			reply, bubbledError := dbtx.txPostComment(
+			bubbledError := dbtx.txPostComment(
 				replies.Get(fmt.Sprintf("%d", i)),
 				threadId,
+				threadKey,
 				sub,
 				int(insertId),
 				currentDepth+1,
 				maxDepth,
 			)
 			if bubbledError != nil {
-				return nil, bubbledError
+				return bubbledError
 			}
-			repliesTmpl = append(repliesTmpl, *reply)
 		}
 	}
-	return &CommentTmpl{
-		fmt.Sprintf("reply-%s", commentId),
-		template.HTML(html.UnescapeString(content)),
-		repliesTmpl,
-		author,
-		time.Unix(int64(timestamp), 0).Format("02 Jan 2006"),
-	}, nil
+	return nil
 }
 
-func (dbtx *DbTransaction) txPostThread(data []byte, sub string, continueReply string) error {
+func (dbtx *DbTransaction) txPostThread(data []byte, sub string, fromReply string) error {
 
 	db := dbtx.dbConnection
 	// Add first post as thread.
@@ -235,7 +224,7 @@ func (dbtx *DbTransaction) txPostThread(data []byte, sub string, continueReply s
 	thrRepliesNum := gjson.GetBytes(data, "0.data.children.0.data.num_comments").Int()
 	thrTimestamp := gjson.GetBytes(data, "0.data.children.0.data.created").Int()
 
-	// TODO overwrite if previous exists
+	// TODO overwrite if previous older version exists.
 	thrStmnt, stmntErr := dbtx.tx.Prepare(`
 		INSERT INTO threads (
 			thread_id,
@@ -261,9 +250,9 @@ func (dbtx *DbTransaction) txPostThread(data []byte, sub string, continueReply s
 		return &DbError{}
 	}
 
-	_, thrExcErr := thrStmnt.Exec(
+	insertRes, thrExcErr := thrStmnt.Exec(
 		thrId,
-		continueReply,
+		fromReply,
 		thrRepliesNum,
 		thrTitle,
 		thrBody,
@@ -273,6 +262,7 @@ func (dbtx *DbTransaction) txPostThread(data []byte, sub string, continueReply s
 		thrTimestamp,
 		time.Now().Unix(),
 	)
+	thrKey, _ := insertRes.LastInsertId()
 
 	if thrExcErr != nil {
 		Log(
@@ -282,48 +272,25 @@ func (dbtx *DbTransaction) txPostThread(data []byte, sub string, continueReply s
 	}
 
 	Log("Created a new thread.", fmt.Sprintf("ID %s", thrId)).Info()
-	replies := []CommentTmpl{}
 
 	comments := gjson.GetBytes(data, "1.data.children")
 	for i := 0; i < int(comments.Get("#").Int()); i++ {
-		reply, bubbledError := dbtx.txPostComment(comments.Get(fmt.Sprintf("%d", i)), thrId, sub, -1, 0, 100)
+		bubbledError := dbtx.txPostComment(
+			comments.Get(fmt.Sprintf("%d", i)),
+			thrId,
+			thrKey,
+			sub,
+			-1,
+			0,
+			100,
+		)
 		if bubbledError != nil {
 			Log(
 				bubbledError.message, bubbledError.details,
 			).Error()
 			return &DbError{}
 		}
-		replies = append(replies, *reply)
 	}
-
-	go func() {
-
-		t := templates.Lookup("thread.tmpl").Lookup("thread")
-
-		//
-		// Write created html to file.
-		//
-
-		fileName := thrId
-		if continueReply != "" {
-			fileName += "-" + continueReply
-		}
-		err := SavePage(
-			fmt.Sprintf("%s.html", fileName),
-			t,
-			ThreadTmpl{thrTitle,
-				template.HTML(html.UnescapeString(thrBody)),
-				thrBodyLink,
-				sub,
-				replies,
-				thrAuthor,
-				time.Unix(int64(thrTimestamp), 0).Format("02 Jan 2006"),
-			},
-		)
-		if err != nil {
-			Log("Error saving page", err.Error()).Error()
-		}
-	}()
 
 	return nil
 
@@ -359,9 +326,117 @@ func (dbtx *DbTransaction) done() {
 	dbtx.dbConnection.Close()
 }
 
+//type ArchiveQuery struct {
+//	threadId string
+//	replyId string
+//}
+
+func NewArchiveQuery(threadId string, replyId string) <-chan *ArchiveTmpl {
+	c := make(chan *ArchiveTmpl)
+	go func() {
+
+		//
+		// Query thread, get highest level thread if no replyId specified, else start from reply.
+		//
+
+		rows, qerr := dbReadOnly.Query(`
+			SELECT
+				id, replies_num, sub, title, content, content_link, author, timestamp, archive_timestamp
+			FROM threads
+			WHERE thread_id = ? AND continuing_reply = ?
+			ORDER BY archive_timestamp DESC
+			LIMIT 1
+			`,
+			threadId,
+			replyId,
+		)
+		if qerr != nil {
+			LogE(&DbError{"Error with thread query", qerr.Error()})
+		}
+
+		rows.Next()
+
+		thrNumId := 0
+		thrRepliesC := 0
+		thrTs := ThreadTmpl{}
+		thrTimestamp := 0
+		arcTimestamp := 0
+		rows.Scan(
+			&thrNumId,
+			&thrRepliesC,
+			&thrTs.Subreddit,
+			&thrTs.ThreadTitle,
+			&thrTs.ThreadContent,
+			&thrTs.ThreadContentLink,
+			&thrTs.Author,
+			&thrTimestamp,
+			&arcTimestamp,
+		)
+
+		rows.Close()
+
+		//
+		// Query each comment and its replies starting from the original post.
+		//
+
+		queue := []struct {
+			id string
+			p  *CommentTmpl
+		}{
+			{"NULL", nil}}
+
+		for len(queue) > 0 {
+
+			currentParentId := queue[0].id
+			currentParent := queue[0].p
+			queue = queue[1:]
+
+			rows, qerr = dbReadOnly.Query(`
+				SELECT id, comment_id, content, author, timestamp, continues
+				FROM comments
+				WHERE thread_key = ? AND parent_id = ?
+				`, thrNumId, currentParentId,
+			)
+			for rows.Next() {
+				r := &CommentTmpl{}
+				rId := -1
+				rTimestamp := 0
+				rows.Scan(&rId, &r.CommentId, &r.CommentContent, &r.Author, &rTimestamp, &r.Continues)
+				r.ThreadId = threadId
+				queue = append(queue, struct {
+					id string
+					p  *CommentTmpl
+				}{fmt.Sprintf("%d", rId), r})
+				if currentParent == nil {
+					thrTs.Replies = append(thrTs.Replies, r)
+				} else {
+					currentParent.Children = append(currentParent.Children, r)
+				}
+			}
+			rows.Close()
+		}
+
+		t := templates.Lookup("thread.tmpl").Lookup("thread")
+		thrBuf := new(bytes.Buffer)
+		t.Execute(thrBuf, thrTs)
+
+		arcTs := ArchiveTmpl{
+			"",
+			threadId,
+			thrTs.ThreadTitle,
+			replyId,
+			thrTs.Subreddit,
+			template.HTML(html.UnescapeString(thrBuf.String())),
+		}
+		c <- &arcTs
+
+	}()
+	return c
+}
+
 // Post a new thread to the database and create a corresponding HTML file.
 // Writes the created HTML to disk.
-// If continueReply is not empty, the thread is a continuance of a comment thread,
+// If fromReply is not empty, the thread is a continuance of a comment thread,
 // from a reply with that id
 //
 func archiveThread(sub string, data []byte) error {

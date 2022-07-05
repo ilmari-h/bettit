@@ -40,12 +40,13 @@ h5 {
   width: 100%;
   color: white;
   text-align: center;
+  position: absolute;
 }
 
 .center {
+  height: 95%;
   display: flex;
   margin: auto;
-  margin-top: 20vh;
   justify-content: center;
   align-items: center;
   flex-direction: column;

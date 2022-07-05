@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"html"
 	"html/template"
 	"io"
 	"io/ioutil"
@@ -50,17 +49,19 @@ type ThreadTmpl struct {
 	ThreadContent     template.HTML
 	ThreadContentLink string
 	Subreddit         string
-	Replies           []CommentTmpl
+	Replies           []*CommentTmpl
 	Author            string
 	Time              string
 }
 
 type CommentTmpl struct {
 	CommentId      string
+	ThreadId       string
 	CommentContent template.HTML
-	Children       []CommentTmpl
+	Children       []*CommentTmpl
 	Author         string
 	Time           string
+	Continues      bool
 }
 
 type TemplateError struct {
@@ -172,12 +173,7 @@ func RenderIndexPage(w io.Writer) error {
 }
 
 func RenderThreadPage(fileId string, w io.Writer) error {
-	fname := fileId + ".html"
-	fpath, err := getRenderFilePath(fname)
-	if err != nil {
-		Log("Error getting render file path", err.Error()).Error()
-		return err
-	}
+
 	fnameParts := strings.Split(fileId, "-")
 	threadId := fnameParts[0]
 	continuingReply := ""
@@ -187,41 +183,10 @@ func RenderThreadPage(fileId string, w io.Writer) error {
 		continuingReply = fnameParts[1]
 
 	}
-	rows, qErr := dbReadOnly.Query(`
-		SELECT archive_timestamp, title, sub FROM threads
-		WHERE thread_id = ? AND continuing_reply = ?
-		ORDER BY archive_timestamp DESC
-		LIMIT 1`,
-		threadId,
-		continuingReply,
-	)
-	defer rows.Close()
 
-	archiveTimestamp := 0
-	threadTitle := ""
-	sub := ""
-	if qErr != nil {
-		Log("Error with thread query", qErr.Error()).Error()
-		return &DbError{"Error with thread query", qErr.Error()}
-	} else {
-		rows.Next()
-		rows.Scan(&archiveTimestamp, &threadTitle, &sub)
-	}
+	thing := <-NewArchiveQuery(threadId, continuingReply)
+	t := templates.Lookup("thread.tmpl").Lookup("archive")
+	t.Execute(w, thing)
 
-	if data, ferr := os.ReadFile(fpath); ferr != nil {
-		Log("Error reading file for page render", ferr.Error()).Error()
-		return &TemplateError{}
-	} else {
-		t := templates.Lookup("thread.tmpl").Lookup("archive")
-		newPage := ArchiveTmpl{
-			time.Unix(int64(archiveTimestamp), 0).Format("02 Jan 2006"),
-			threadId,
-			threadTitle,
-			continuingReply,
-			sub,
-			template.HTML(html.UnescapeString(string(data))),
-		}
-		t.Execute(w, newPage)
-		return nil
-	}
+	return nil
 }
