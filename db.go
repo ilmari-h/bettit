@@ -14,10 +14,6 @@ import (
 )
 
 var templates *template.Template
-var totalThreadsCreated = struct {
-	LastUpdated int64
-	Value       int
-}{0, 0}
 var dbReadOnly *sql.DB
 
 type DbError struct {
@@ -73,6 +69,7 @@ func InitDatabase() {
 			parent_id INTEGER,
 			timestamp INTEGER,
 			continues BOOLEAN,
+			score INTEGER,
 			FOREIGN KEY (thread_key) REFERENCES threads(id),
 			FOREIGN KEY (parent_id) REFERENCES comments(id)
 		);`,
@@ -154,6 +151,7 @@ func (dbtx *DbTransaction) txPostComment(
 	replies := data.Get("data.replies.data.children")
 	loadMore := replies.Get("0.kind").String() == "more"
 	commentId := data.Get("data.id").String()
+	score := data.Get("data.score").Int()
 	parentStr := "NULL"
 	if parent > -1 {
 		parentStr = fmt.Sprintf("%d", parent)
@@ -161,14 +159,31 @@ func (dbtx *DbTransaction) txPostComment(
 
 	var insertId int64 = -1
 	if statement, err := dbtx.tx.Prepare(`
-		INSERT INTO comments ( comment_id, content, author, thread_key, parent_id, timestamp, continues )
-		VALUES ( ?, ?, ?, ?, ?, ?, ? );
+		INSERT INTO comments (
+			comment_id,
+			content,
+			author,
+			thread_key,
+			parent_id,
+			timestamp,
+			continues,
+			score
+		)
+		VALUES ( ?, ?, ?, ?, ?, ?, ?, ?);
 	`); err != nil {
 		return &DbError{
 			"Error creating a new comment", err.Error(),
 		}
 	} else {
-		result, exErr := statement.Exec(commentId, content, author, threadKey, parentStr, timestamp, loadMore)
+		result, exErr := statement.Exec(commentId,
+			content,
+			author,
+			threadKey,
+			parentStr,
+			timestamp,
+			loadMore,
+			score,
+		)
 		if exErr != nil {
 			return &DbError{
 				"Error creating a new comment", err.Error(),
@@ -213,7 +228,6 @@ func (dbtx *DbTransaction) txPostComment(
 
 func (dbtx *DbTransaction) txPostThread(data []byte, sub string, fromReply string) error {
 
-	db := dbtx.dbConnection
 	// Add first post as thread.
 	thrBody := gjson.GetBytes(data, "0.data.children.0.data.selftext_html").String()
 	thrBodyLink := gjson.GetBytes(data, "0.data.children.0.data.url_overridden_by_dest").String()
@@ -241,9 +255,7 @@ func (dbtx *DbTransaction) txPostThread(data []byte, sub string, fromReply strin
 		VALUES ( ?, ?, ?, ?, ?, ?, ?, ?, ?, ? );
 	`)
 
-	Log("CURRENT OPEN CONNECTIONS", fmt.Sprintf("%d", db.Stats().InUse)).Info()
-
-	if stmntErr != nil {
+	if stmntErr != nil || thrStmnt == nil {
 		Log(
 			"Error preparing new thread insert query", stmntErr.Error(),
 		).Error()
@@ -262,14 +274,14 @@ func (dbtx *DbTransaction) txPostThread(data []byte, sub string, fromReply strin
 		thrTimestamp,
 		time.Now().Unix(),
 	)
-	thrKey, _ := insertRes.LastInsertId()
-
-	if thrExcErr != nil {
+	if thrExcErr != nil || insertRes == nil {
 		Log(
 			"Error executing new thread insert query", thrExcErr.Error(),
 		).Error()
 		return &DbError{}
 	}
+
+	thrKey, _ := insertRes.LastInsertId()
 
 	Log("Created a new thread.", fmt.Sprintf("ID %s", thrId)).Info()
 
@@ -326,119 +338,114 @@ func (dbtx *DbTransaction) done() {
 	dbtx.dbConnection.Close()
 }
 
-//type ArchiveQuery struct {
-//	threadId string
-//	replyId string
-//}
+func GetArchiveQuery(threadId string, replyId string) (*ArchiveTmpl, error) {
 
-func NewArchiveQuery(threadId string, replyId string) <-chan *ArchiveTmpl {
-	c := make(chan *ArchiveTmpl)
-	go func() {
+	//
+	// Query thread, get highest level thread if no replyId specified, else start from reply.
+	//
 
-		//
-		// Query thread, get highest level thread if no replyId specified, else start from reply.
-		//
+	rows, qerr := dbReadOnly.Query(`
+		SELECT
+		id, replies_num, sub, title, content, content_link, author, timestamp, archive_timestamp
+		FROM threads
+		WHERE thread_id = ? AND continuing_reply = ?
+		ORDER BY archive_timestamp DESC
+		LIMIT 1
+		`,
+		threadId,
+		replyId,
+	)
+	if qerr != nil {
+		return nil, LogE(&DbError{"Error with thread query", qerr.Error()})
+	}
 
-		rows, qerr := dbReadOnly.Query(`
-			SELECT
-				id, replies_num, sub, title, content, content_link, author, timestamp, archive_timestamp
-			FROM threads
-			WHERE thread_id = ? AND continuing_reply = ?
-			ORDER BY archive_timestamp DESC
-			LIMIT 1
-			`,
-			threadId,
-			replyId,
+	rows.Next()
+
+	thrNumId := 0
+	thrRepliesC := 0
+	thrTs := ThreadTmpl{}
+	thrTimestamp := 0
+	arcTimestamp := 0
+	rows.Scan(
+		&thrNumId,
+		&thrRepliesC,
+		&thrTs.Subreddit,
+		&thrTs.ThreadTitle,
+		&thrTs.ThreadContent,
+		&thrTs.ThreadContentLink,
+		&thrTs.Author,
+		&thrTimestamp,
+		&arcTimestamp,
+	)
+
+	rows.Close()
+
+	// Nothing found.
+	if thrTimestamp == 0 {
+		return nil, nil
+	}
+
+	//
+	// Query each comment and its replies starting from the original post.
+	//
+
+	queue := []struct {
+		id string
+		p  *CommentTmpl
+	}{
+		{"NULL", nil}}
+
+	for len(queue) > 0 {
+
+		currentParentId := queue[0].id
+		currentParent := queue[0].p
+		queue = queue[1:]
+
+		rows, qerr = dbReadOnly.Query(`
+			SELECT id, comment_id, content, author, timestamp, continues, score
+			FROM comments
+			WHERE thread_key = ? AND parent_id = ?
+			ORDER BY score DESC
+			`, thrNumId, currentParentId,
 		)
 		if qerr != nil {
-			LogE(&DbError{"Error with thread query", qerr.Error()})
+			return nil, LogE(&DbError{"Error with comment query", qerr.Error()})
 		}
-
-		rows.Next()
-
-		thrNumId := 0
-		thrRepliesC := 0
-		thrTs := ThreadTmpl{}
-		thrTimestamp := 0
-		arcTimestamp := 0
-		rows.Scan(
-			&thrNumId,
-			&thrRepliesC,
-			&thrTs.Subreddit,
-			&thrTs.ThreadTitle,
-			&thrTs.ThreadContent,
-			&thrTs.ThreadContentLink,
-			&thrTs.Author,
-			&thrTimestamp,
-			&arcTimestamp,
-		)
-
-		rows.Close()
-
-		//
-		// Query each comment and its replies starting from the original post.
-		//
-
-		queue := []struct {
-			id string
-			p  *CommentTmpl
-		}{
-			{"NULL", nil}}
-
-		for len(queue) > 0 {
-
-			currentParentId := queue[0].id
-			currentParent := queue[0].p
-			queue = queue[1:]
-
-			rows, qerr = dbReadOnly.Query(`
-				SELECT id, comment_id, content, author, timestamp, continues
-				FROM comments
-				WHERE thread_key = ? AND parent_id = ?
-				`, thrNumId, currentParentId,
-			)
-			for rows.Next() {
-				r := &CommentTmpl{}
-				rId := -1
-				rTimestamp := 0
-				rows.Scan(&rId, &r.CommentId, &r.CommentContent, &r.Author, &rTimestamp, &r.Continues)
-				r.ThreadId = threadId
-				queue = append(queue, struct {
-					id string
-					p  *CommentTmpl
-				}{fmt.Sprintf("%d", rId), r})
-				if currentParent == nil {
-					thrTs.Replies = append(thrTs.Replies, r)
-				} else {
-					currentParent.Children = append(currentParent.Children, r)
-				}
+		for rows.Next() {
+			r := &CommentTmpl{}
+			rId := -1
+			rTimestamp := 0
+			rows.Scan(&rId, &r.CommentId, &r.CommentContent, &r.Author, &rTimestamp, &r.Continues, &r.Score)
+			r.ThreadId = threadId
+			queue = append(queue, struct {
+				id string
+				p  *CommentTmpl
+			}{fmt.Sprintf("%d", rId), r})
+			if currentParent == nil {
+				thrTs.Replies = append(thrTs.Replies, r)
+			} else {
+				currentParent.Children = append(currentParent.Children, r)
 			}
-			rows.Close()
 		}
+		rows.Close()
+	}
 
-		t := templates.Lookup("thread.tmpl").Lookup("thread")
-		thrBuf := new(bytes.Buffer)
-		t.Execute(thrBuf, thrTs)
+	t := templates.Lookup("thread.tmpl").Lookup("thread")
+	thrBuf := new(bytes.Buffer)
+	t.Execute(thrBuf, thrTs)
 
-		arcTs := ArchiveTmpl{
-			"",
-			threadId,
-			thrTs.ThreadTitle,
-			replyId,
-			thrTs.Subreddit,
-			template.HTML(html.UnescapeString(thrBuf.String())),
-		}
-		c <- &arcTs
+	arcTs := ArchiveTmpl{
+		time.Unix(int64(arcTimestamp), 0).Format("02 Jan 2006"),
+		threadId,
+		thrTs.ThreadTitle,
+		replyId,
+		thrTs.Subreddit,
+		template.HTML(html.UnescapeString(thrBuf.String())),
+	}
 
-	}()
-	return c
+	return &arcTs, nil
 }
 
-// Post a new thread to the database and create a corresponding HTML file.
-// Writes the created HTML to disk.
-// If fromReply is not empty, the thread is a continuance of a comment thread,
-// from a reply with that id
-//
 func archiveThread(sub string, data []byte) error {
 
 	thrId := gjson.GetBytes(data, "0.data.children.0.data.id").String()

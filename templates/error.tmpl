@@ -1,0 +1,121 @@
+{{ define "notfound" }}
+<!DOCTYPE html>
+<html>
+<head>
+	<link rel="stylesheet" href="res/index.css">
+	<title>Bettit - archived threads</title>
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body>
+<div class="navbar">
+	<h5><b>404 - Not found</b></h5>
+</div>
+
+<section class="center">
+	<div>
+		<h3>The requested page was not found.</h3>
+		<p>If it was just recently archived, it may take a while to show up.<br>
+		Please check again in a moment.</p>
+		<a href="/">Go back</a>
+	<div>
+</section>
+
+</body>
+</html>
+{{ end }}
+
+{{ define "internal" }}
+<!DOCTYPE html>
+<html>
+<head>
+	<link rel="stylesheet" href="res/index.css">
+	<title>Bettit - archived threads</title>
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body>
+<div class="navbar">
+	<h5><b>500 - Internal Server Error</b></h5>
+</div>
+
+<section class="center">
+	<div>
+		<h3>Error rendering page.</h3>
+		<a href="/">Go back</a>
+	<div>
+</section>
+
+</body>
+</html>
+{{ end }}
+
+{{ define "invalidreq" }}
+<!DOCTYPE html>
+<html>
+<head>
+	<link rel="stylesheet" href="res/index.css">
+	<title>Bettit - archived threads</title>
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body>
+<div class="navbar">
+	<h5><b>400 - Invalid Request</b></h5>
+</div>
+
+<section class="center">
+	<div>
+		<h3>Error parsing request.</h3>
+		<a href="/">Go back</a>
+	<div>
+</section>
+
+</body>
+</html>
+{{ end }}
+
+{{ define "conflict" }}
+<!DOCTYPE html>
+<html>
+<head>
+	<link rel="stylesheet" href="res/index.css">
+	<title>Bettit - archived threads</title>
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body>
+<div class="navbar">
+	<h5><b>409 - Conflict</b></h5>
+</div>
+
+<section class="center">
+	<div>
+		<h3>Archive already exists</h3>
+		<div class="prompt">
+			Archive exists at <a href="{{ .Url }}">{{ .Url }}</a>
+		</div>
+		<a href="/">Go back</a>
+	</div>
+</section>
+
+</body>
+</html>
+{{ end }}
+
+{{ define "other" }}
+<!DOCTYPE html>
+<html>
+<head>
+	<link rel="stylesheet" href="res/index.css">
+	<title>Bettit - archived threads</title>
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body>
+<div class="navbar">
+	<h5><b>{{ .Code }} - Error</b></h5>
+</div>
+
+<section class="center">
+	<div>
+		<h3>Something went wrong.</h3>
+		<a href="/">Go back</a>
+	<div>
+</section>
+{{ end }}

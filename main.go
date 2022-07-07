@@ -10,11 +10,18 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/pborman/getopt/v2"
 	log "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
 )
 
 var apiToken string = ""
+
+type ClientOptions struct {
+	Timeout int
+}
+
+var clientOptions ClientOptions
 
 func Log(message string, detail string) *log.Entry {
 	return log.WithFields(log.Fields{
@@ -23,21 +30,22 @@ func Log(message string, detail string) *log.Entry {
 	})
 }
 
-func LogE(e *DbError) {
+func LogE(e *DbError) error {
 	log.WithFields(log.Fields{
 		"message": e.message,
 		"detail":  e.details,
 	}).Error()
+	return e
 }
 
-func auth() {
+func InitAPI() {
 	username := os.Getenv("REDDIT_APP_DEV_NAME")
 	password := os.Getenv("REDDIT_APP_DEV_PW")
 	id := os.Getenv("REDDIT_APP_ID")
 	secret := os.Getenv("REDDIT_APP_SECRET")
 
 	client := http.Client{
-		Timeout: time.Second * 5,
+		Timeout: time.Second * time.Duration(clientOptions.Timeout),
 	}
 
 	req, _ := http.NewRequest(
@@ -69,6 +77,7 @@ func auth() {
 }
 
 func init() {
+
 	if gin.IsDebugging() {
 		log.SetLevel(log.DebugLevel)
 		log.SetOutput(os.Stdout)
@@ -83,9 +92,42 @@ func init() {
 }
 
 func main() {
-	auth()
+
+	nRouterOpts := RouterOptions{}
+	clientOptions.Timeout = *getopt.IntLong("client-timeout", 'c', 5, "Timeout for requests made to Reddit API.")
+	nRouterOpts.GetCacheTime = *getopt.IntLong("get-cache-time", 'g', 60, "Time in seconds for caching GET-requests.")
+	nRouterOpts.GetCacheExpiration = *getopt.IntLong("get-cache-exp", 'e', 300, "Expiry time in seconds for GET-requests.")
+	nRouterOpts.PostCacheTime = *getopt.IntLong("post-cache-time", 'p', 3600,
+		`Time in seconds for blocking identical POST-requests to /archive -endpoint.
+An archive request initiates an request to the Reddit API.
+To avoid unnecessary requests, this option is used.`,
+	)
+
+	getopt.SetUsage(func() {
+		getopt.PrintUsage(os.Stderr)
+		os.Stderr.WriteString(`
+Make sure the following environment variables are defined to access Reddit API.
+They are defined by creating a 'script' type application on: https://www.reddit.com/prefs/apps
+
+REDDIT_APP_DEV_NAME
+	Name of the user set as developer for your application on Reddit.
+REDDIT_APP_DEV_PW
+	Password for the above mentioned account.
+REDDIT_APP_ID
+	ID of the script application.
+REDDIT_APP_SECRET
+	Secret of the application.
+`)
+	})
+	getopt.Parse()
+
+	InitAPI()
 	InitDatabase()
-	r := GettitRouter()
+	r := GettitRouter(RouterOptions{
+		GetCacheTime:       60,
+		GetCacheExpiration: 15 * 60,
+		PostCacheTime:      120,
+	})
 	r.Static("/res", "./public")
 	r.Run()
 }

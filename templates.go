@@ -8,7 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 //
@@ -36,10 +37,6 @@ type ArchiveTmpl struct {
 	ThreadHTML  template.HTML
 }
 
-type RedirectPageTmpl struct {
-	IsErr   bool
-	Content RedirectTmpl
-}
 type RedirectTmpl struct {
 	Url string
 }
@@ -62,6 +59,7 @@ type CommentTmpl struct {
 	Author         string
 	Time           string
 	Continues      bool
+	Score          string
 }
 
 type TemplateError struct {
@@ -133,46 +131,67 @@ func SavePage(fname string, tmpl *template.Template, data any) error {
 	return nil
 }
 
-func RenderRedirectPage(err bool, url string, w io.Writer) {
-	tp := templates.Lookup("redirect.tmpl").Lookup("page")
-	tp.Execute(w, RedirectPageTmpl{
-		err,
-		RedirectTmpl{
-			Url: url,
-		},
-	})
+func RenderErrorPage(errStatus int, w gin.ResponseWriter) {
+	tp := templates.Lookup("redirect.tmpl").Lookup("other")
+	w.WriteHeader(errStatus)
+	switch errStatus {
+	case 400:
+		tp = templates.Lookup("redirect.tmpl").Lookup("invalidreq")
+		break
+	case 404:
+		tp = templates.Lookup("redirect.tmpl").Lookup("notfound")
+		break
+	case 500:
+		tp = templates.Lookup("redirect.tmpl").Lookup("internal")
+		break
+	default:
+		tp = templates.Lookup("redirect.tmpl").Lookup("other")
+		tp.Execute(w, struct{ Code int }{errStatus})
+		return
+	}
+	tp.Execute(w, nil)
 }
 
-func RenderIndexPage(w io.Writer) error {
+func RenderRedirectPage(url string, w io.Writer) {
+	tp := templates.Lookup("redirect.tmpl").Lookup("page")
+	tp.Execute(w, RedirectTmpl{
+		Url: url,
+	},
+	)
+}
+
+func RenderAlreadyExists(url string, w gin.ResponseWriter) {
+	w.WriteHeader(409)
+	tp := templates.Lookup("redirect.tmpl").Lookup("conflict")
+	tp.Execute(w, RedirectTmpl{
+		Url: url,
+	},
+	)
+}
+
+func RenderIndexPage(w io.Writer) int {
 	count := 0
 
-	// Do this query at most once a minute
-	if time.Now().Unix() > 60+totalThreadsCreated.LastUpdated {
-		rows, qErr := dbReadOnly.Query(`SELECT COUNT(DISTINCT thread_id) from threads`)
-		defer rows.Close()
-		if qErr != nil {
-			Log("Error with thread count query", qErr.Error()).Error()
-			return &DbError{"Error with thread count query", qErr.Error()}
-		}
-		rows.Next()
-		rows.Scan(&count)
-		totalThreadsCreated.LastUpdated = time.Now().Unix()
-		totalThreadsCreated.Value = count
-	} else {
-		count = totalThreadsCreated.Value
+	rows, qErr := dbReadOnly.Query(`SELECT COUNT(DISTINCT thread_id) from threads`)
+	defer rows.Close()
+	if qErr != nil {
+		Log("Error with thread count query", qErr.Error()).Error()
+		return 500
 	}
+	rows.Next()
+	rows.Scan(&count)
 
 	err, latestCreated := queryLatestArchives(10)
 	if err != nil {
-		return err
+		return 500
 	}
 
 	t := templates.Lookup("index.tmpl").Lookup("index")
 	t.Execute(w, IndexTmpl{count, latestCreated})
-	return nil
+	return 200
 }
 
-func RenderThreadPage(fileId string, w io.Writer) error {
+func RenderThreadPage(fileId string, w gin.ResponseWriter) int {
 
 	fnameParts := strings.Split(fileId, "-")
 	threadId := fnameParts[0]
@@ -181,12 +200,16 @@ func RenderThreadPage(fileId string, w io.Writer) error {
 	// If thread is part of a longer comment thread the comment's ID will be the second element.
 	if len(fnameParts) > 1 {
 		continuingReply = fnameParts[1]
-
 	}
 
-	thing := <-NewArchiveQuery(threadId, continuingReply)
-	t := templates.Lookup("thread.tmpl").Lookup("archive")
-	t.Execute(w, thing)
-
-	return nil
+	if arch, err := GetArchiveQuery(threadId, continuingReply); err != nil {
+		Log("Error getting archive.", err.Error())
+		return 500
+	} else if arch == nil {
+		return 404
+	} else {
+		t := templates.Lookup("thread.tmpl").Lookup("archive")
+		t.Execute(w, arch)
+		return 200
+	}
 }

@@ -81,6 +81,7 @@ p {
 }
 
 .thread-post {
+  overflow: auto;
   margin: 10px 8px 8px 8px;
 }
 
@@ -105,4 +106,7 @@ input:checked + label::after {
 }
 input:checked + label + .children {
   display: none;
+}
+a {
+  word-break: break-all;
 }

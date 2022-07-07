@@ -20,6 +20,7 @@
 <div class="comment" id="{{ .CommentId }}" >
 	<div class="post-details">
 		posted by <a href="https://www.reddit.com/user/{{.Author}}">u/{{.Author}}</a> on {{.Time}}
+		<span> {{.Score}}▲ </span>
 	</div>
 	<div class="prose">
 		{{ .CommentContent }}
@@ -44,6 +45,7 @@
 <head>
 	<link rel="stylesheet" href="res/page.css">
 	<title>Archive: {{.ThreadTitle}}</title>
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 </head>
 <body>
 

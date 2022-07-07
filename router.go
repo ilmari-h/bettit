@@ -5,9 +5,12 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
+	"github.com/chenyahui/gin-cache"
+	"github.com/chenyahui/gin-cache/persist"
 	"github.com/gin-gonic/gin"
 )
 
@@ -33,10 +36,20 @@ func (err *RouterError) Code() int {
 	return err.code
 }
 
+var archivePostCache map[string]int64 // Post ID to timestamp
+
+type RouterOptions struct {
+	GetCacheTime       int
+	GetCacheExpiration int
+	PostCacheTime      int
+}
+
+var routerOptions RouterOptions
+
 func getThread(req *http.Request) ([]byte, *RouterError) {
 
 	client := http.Client{
-		Timeout: time.Second * 5,
+		Timeout: time.Second * time.Duration(clientOptions.Timeout),
 	}
 	res, err := client.Do(req)
 	if err != nil {
@@ -63,9 +76,10 @@ func getThread(req *http.Request) ([]byte, *RouterError) {
 	return body, nil
 }
 
-func routeIndex(c *gin.Context) {
-	RenderIndexPage(c.Writer)
-	c.Status(200)
+func routeGetIndex(c *gin.Context) {
+	if status := RenderIndexPage(c.Writer); status != 200 {
+		RenderErrorPage(status, c.Writer)
+	}
 }
 
 func NewThreadRequest(sub string, threadId string, commentId string) (*http.Request, error) {
@@ -91,54 +105,87 @@ func NewThreadRequest(sub string, threadId string, commentId string) (*http.Requ
 	return req, nil
 }
 
-func routeArchive(c *gin.Context) {
+func readThreadUrl(turl *url.URL) (struct {
+	Sub string
+	Id  string
+}, bool) {
+	urlParts := strings.Split(turl.Path, "/")
+	if len(urlParts) < 4 {
+		return struct {
+			Sub string
+			Id  string
+		}{"", ""}, true
+	}
+	idIsValid :=
+		regexp.MustCompile(`^[a-zA-Z0-9]*$`).MatchString(urlParts[4]) && // Alphanumeric ID
+			len(urlParts[4]) <= 6 && // Correct length
+			urlParts[1] == "r" && // check format
+			urlParts[3] == "comments" // check format
+
+	return struct {
+		Sub string
+		Id  string
+	}{urlParts[2], urlParts[4]}, !idIsValid
+}
+
+func routePostArchive(c *gin.Context) {
 	input := c.PostForm("archivef")
 
 	// Parse an API request based on input
 	url, _ := url.Parse(input)
-	urlParts := strings.Split(url.Path, "/")
+	urlParts, urlErr := readThreadUrl(url)
 
-	subreddit := urlParts[2]
-	id := urlParts[4]
+	if urlErr {
+		RenderErrorPage(400, c.Writer)
+		return
+	}
 
-	req, err := NewThreadRequest(subreddit, id, "")
+	if ts, exists := archivePostCache[urlParts.Id]; exists && ts-int64(routerOptions.PostCacheTime) < time.Now().Unix() {
+
+		RenderAlreadyExists("http://localhost:8080/"+urlParts.Id, c.Writer)
+		return
+	}
+
+	req, err := NewThreadRequest(urlParts.Sub, urlParts.Id, "")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{})
+		RenderErrorPage(400, c.Writer)
 		return
 	}
 
 	threadBytes, tErr := getThread(req)
 	if tErr != nil {
-		Log("Error reading thread template", err.Error()).Error()
-		c.JSON(tErr.Code(), gin.H{})
+		RenderErrorPage(tErr.code, c.Writer)
 		return
 	}
 
-	if dbError := archiveThread(subreddit, threadBytes); dbError != nil {
-		RenderRedirectPage(true, "http://localhost:8080/"+id, c.Writer)
+	if dbError := archiveThread(urlParts.Sub, threadBytes); dbError != nil {
+		RenderAlreadyExists("http://localhost:8080/"+urlParts.Id, c.Writer)
 	} else {
-		RenderRedirectPage(false, "http://localhost:8080/"+id, c.Writer)
+		archivePostCache[urlParts.Id] = time.Now().Unix()
+		RenderRedirectPage("http://localhost:8080/"+urlParts.Id, c.Writer)
 	}
 }
 
-func routePage(c *gin.Context) {
+func routeGetPage(c *gin.Context) {
 	threadId := c.Param("threadid")
-
-	if rerr := RenderThreadPage(threadId, c.Writer); rerr != nil {
-		c.Status(404)
-	} else {
-		c.Status(200)
+	if status := RenderThreadPage(threadId, c.Writer); status != 200 {
+		RenderErrorPage(status, c.Writer)
 	}
 }
 
-func GettitRouter() *gin.Engine {
+func GettitRouter(opts RouterOptions) *gin.Engine {
+
+	routerOptions = opts
+	archivePostCache = make(map[string]int64)
+	memCache := persist.NewMemoryStore(time.Second * time.Duration(routerOptions.GetCacheExpiration))
+	getCacheTime := time.Second * time.Duration(routerOptions.GetCacheTime)
 
 	r := gin.Default()
-	r.GET("/", routeIndex)
+	r.GET("/", cache.CacheByRequestURI(memCache, getCacheTime), routeGetIndex)
 	r.GET("/health", func(c *gin.Context) {
 		c.String(http.StatusOK, "API is live.")
 	})
-	r.GET("/:threadid", routePage)
-	r.POST("/archive", routeArchive)
+	r.GET("/:threadid", cache.CacheByRequestURI(memCache, getCacheTime), routeGetPage)
+	r.POST("/archive", routePostArchive)
 	return r
 }

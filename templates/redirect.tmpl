@@ -4,23 +4,13 @@
 <head>
 	<link rel="stylesheet" href="res/index.css">
 	<title>Bettit - archived threads</title>
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 </head>
 <body>
 <div class="navbar">
 	<h5><b>Redirected</b></h5>
 </div>
 
-{{ if .IsErr }}
-	{{ template "redirecterr" .Content }}
-{{ else }}
-	{{ template "redirect" .Content }}
-{{ end }}
-
-</body>
-</html>
-{{ end }}
-
-{{ define "redirect" }}
 <section class="center">
 	<div>
 		<h3>Archive is being created</h3>
@@ -30,16 +20,7 @@
 		<a href="/">Go back</a>
 	<div>
 </section>
+</body>
+</html>
 {{ end }}
 
-{{ define "redirecterr" }}
-<section class="center">
-	<div>
-		<h3>Archive already exists</h3>
-		<div class="prompt">
-			Archive exists at <a href="{{ .Url }}">{{ .Url }}</a>
-		</div>
-		<a href="/">Go back</a>
-	</div>
-</section>
-{{ end }}
