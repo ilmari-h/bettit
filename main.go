@@ -44,6 +44,10 @@ func InitAPI() {
 	id := os.Getenv("REDDIT_APP_ID")
 	secret := os.Getenv("REDDIT_APP_SECRET")
 
+	if username == "" || password == "" || id == "" || secret == "" {
+		log.Fatal("Environment variables are not defined")
+	}
+
 	client := http.Client{
 		Timeout: time.Second * time.Duration(clientOptions.Timeout),
 	}
