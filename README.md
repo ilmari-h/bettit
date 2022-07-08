@@ -1,4 +1,6 @@
+
 # Bettit
+![example workflow](https://github.com/ilmari-h/bettit/actions/workflows/go.yml/badge.svg)
 
 Bettit (stands for better archives for Reddit) is an archival web service for Reddit.
 
