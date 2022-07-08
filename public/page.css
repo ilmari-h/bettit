@@ -40,32 +40,6 @@ h5 {
 p {
   margin-bottom: 10px;
 }
-.navbar {
-  background: var(--accent-red);
-  padding: 4px 0px;
-  width: 100%;
-  color: white;
-  text-align: center;
-  display: flex;
-  justify-content: space-between;
-}
-
-.navbar h5 {
-  display: inline;
-  margin-left: 16px;
-}
-
-.navbar-left {
-  width: 50px;
-}
-
-.navbar-right {
-  width: 50px;
-}
-
-.navbar a {
-  color: var(--accent-fg);
-}
 
 .comment {
   padding: 6px;

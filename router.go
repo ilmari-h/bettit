@@ -81,12 +81,17 @@ func routeGetIndex(c *gin.Context) {
 		RenderErrorPage(status, c.Writer)
 	}
 }
+func routeGetAbout(c *gin.Context) {
+	if status := RenderAboutPage(c.Writer); status != 200 {
+		RenderErrorPage(status, c.Writer)
+	}
+}
 
 func NewThreadRequest(sub string, threadId string, commentId string) (*http.Request, error) {
 
-	requestUrl := fmt.Sprintf("https://oauth.reddit.com/r/%s/comments/%s.json", sub, threadId)
+	requestUrl := fmt.Sprintf("https://oauth.reddit.com/r/%s/comments/%s?sort=confidence.json", sub, threadId)
 	if commentId != "" {
-		requestUrl = fmt.Sprintf("https://oauth.reddit.com/r/%s/comments/%s/comment/%s.json", sub, threadId, commentId)
+		requestUrl = fmt.Sprintf("https://oauth.reddit.com/r/%s/comments/%s/comment/%s?sort=confidence.json", sub, threadId, commentId)
 	}
 	req, err := http.NewRequest(http.MethodGet, requestUrl, nil)
 	req.Header.Set("User-Agent", "Bettit-API/0.1, Archives for Reddit Threads")
@@ -110,7 +115,7 @@ func readThreadUrl(turl *url.URL) (struct {
 	Id  string
 }, bool) {
 	urlParts := strings.Split(turl.Path, "/")
-	if len(urlParts) < 4 {
+	if len(urlParts) < 5 {
 		return struct {
 			Sub string
 			Id  string
@@ -140,9 +145,8 @@ func routePostArchive(c *gin.Context) {
 		return
 	}
 
-	if ts, exists := archivePostCache[urlParts.Id]; exists && ts-int64(routerOptions.PostCacheTime) < time.Now().Unix() {
-
-		RenderAlreadyExists("http://localhost:8080/"+urlParts.Id, c.Writer)
+	if ts, exists := archivePostCache[urlParts.Id]; exists && int64(routerOptions.PostCacheTime) > time.Now().Unix()-ts {
+		RenderAlreadyExists(urlParts.Id, c.Writer)
 		return
 	}
 
@@ -159,10 +163,10 @@ func routePostArchive(c *gin.Context) {
 	}
 
 	if dbError := archiveThread(urlParts.Sub, threadBytes); dbError != nil {
-		RenderAlreadyExists("http://localhost:8080/"+urlParts.Id, c.Writer)
+		RenderAlreadyExists(urlParts.Id, c.Writer)
 	} else {
 		archivePostCache[urlParts.Id] = time.Now().Unix()
-		RenderRedirectPage("http://localhost:8080/"+urlParts.Id, c.Writer)
+		RenderRedirectPage(urlParts.Id, c.Writer)
 	}
 }
 
@@ -182,6 +186,7 @@ func GettitRouter(opts RouterOptions) *gin.Engine {
 
 	r := gin.Default()
 	r.GET("/", cache.CacheByRequestURI(memCache, getCacheTime), routeGetIndex)
+	r.GET("/about", cache.CacheByRequestURI(memCache, getCacheTime), routeGetAbout)
 	r.GET("/health", func(c *gin.Context) {
 		c.String(http.StatusOK, "API is live.")
 	})

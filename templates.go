@@ -1,12 +1,9 @@
 package main
 
 import (
-	"fmt"
 	"html/template"
 	"io"
 	"io/ioutil"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -38,7 +35,7 @@ type ArchiveTmpl struct {
 }
 
 type RedirectTmpl struct {
-	Url string
+	Route string
 }
 
 type ThreadTmpl struct {
@@ -73,7 +70,7 @@ func LoadTemplates() {
 	var allFiles []string
 	files, err := ioutil.ReadDir("./templates")
 	if err != nil {
-		fmt.Println(err)
+		Log("Error loading templates", err.Error()).Fatal()
 	}
 	for _, file := range files {
 		filename := file.Name()
@@ -82,91 +79,45 @@ func LoadTemplates() {
 		}
 	}
 	templates, err = template.ParseFiles(allFiles...)
-}
-
-// Retrieve a public file path safely.
-func getRenderFilePath(fpath string) (string, error) {
-
-	fname := filepath.Clean(fpath)
-	renderDir, perr := filepath.Abs("./archive")
-	if perr != nil {
-		return "", &TemplateError{}
-	}
-
-	if envRenderDir := os.Getenv("BETTIT_PUBLIC_HTML_DIR"); envRenderDir != "" {
-		renderDir, perr = filepath.Abs(envRenderDir)
-		if perr != nil {
-			return "", &TemplateError{}
-		}
-	}
-
-	fullPath := filepath.Join(renderDir, fname)
-
-	//canonicalPath, cerr := filepath.EvalSymlinks(fullPath)
-	//if cerr != nil {
-	//	return "", &TemplateError{}
-	//}
-
-	// Make sure file ends up in `renderDir`.
-	if filepath.Dir(fullPath) != renderDir {
-		return "", &TemplateError{}
-	}
-
-	return fullPath, nil
-}
-
-func SavePage(fname string, tmpl *template.Template, data any) error {
-
-	newFilePath, err := getRenderFilePath(fname)
 	if err != nil {
-		return err
+		Log("Error loading templates", err.Error()).Fatal()
 	}
-
-	file, ferr := os.Create(newFilePath)
-	if ferr != nil {
-		return &TemplateError{}
-	}
-
-	tmpl.Execute(file, data)
-	return nil
 }
 
 func RenderErrorPage(errStatus int, w gin.ResponseWriter) {
-	tp := templates.Lookup("redirect.tmpl").Lookup("other")
+	tp := templates.Lookup("error.tmpl").Lookup("internal")
 	w.WriteHeader(errStatus)
 	switch errStatus {
 	case 400:
-		tp = templates.Lookup("redirect.tmpl").Lookup("invalidreq")
+		tp = templates.Lookup("error.tmpl").Lookup("invalidreq")
 		break
 	case 404:
-		tp = templates.Lookup("redirect.tmpl").Lookup("notfound")
+		tp = templates.Lookup("error.tmpl").Lookup("notfound")
 		break
 	case 500:
-		tp = templates.Lookup("redirect.tmpl").Lookup("internal")
+		tp = templates.Lookup("error.tmpl").Lookup("internal")
 		break
 	default:
-		tp = templates.Lookup("redirect.tmpl").Lookup("other")
+		tp = templates.Lookup("error.tmpl").Lookup("other")
 		tp.Execute(w, struct{ Code int }{errStatus})
 		return
 	}
 	tp.Execute(w, nil)
 }
 
-func RenderRedirectPage(url string, w io.Writer) {
+func RenderRedirectPage(route string, w io.Writer) {
 	tp := templates.Lookup("redirect.tmpl").Lookup("page")
 	tp.Execute(w, RedirectTmpl{
-		Url: url,
-	},
-	)
+		Route: route,
+	})
 }
 
-func RenderAlreadyExists(url string, w gin.ResponseWriter) {
+func RenderAlreadyExists(route string, w gin.ResponseWriter) {
 	w.WriteHeader(409)
 	tp := templates.Lookup("redirect.tmpl").Lookup("conflict")
 	tp.Execute(w, RedirectTmpl{
-		Url: url,
-	},
-	)
+		Route: route,
+	})
 }
 
 func RenderIndexPage(w io.Writer) int {
@@ -187,6 +138,28 @@ func RenderIndexPage(w io.Writer) int {
 	}
 
 	t := templates.Lookup("index.tmpl").Lookup("index")
+	t.Execute(w, IndexTmpl{count, latestCreated})
+	return 200
+}
+
+func RenderAboutPage(w io.Writer) int {
+	count := 0
+
+	rows, qErr := dbReadOnly.Query(`SELECT COUNT(DISTINCT thread_id) from threads`)
+	defer rows.Close()
+	if qErr != nil {
+		Log("Error with thread count query", qErr.Error()).Error()
+		return 500
+	}
+	rows.Next()
+	rows.Scan(&count)
+
+	err, latestCreated := queryLatestArchives(10)
+	if err != nil {
+		return 500
+	}
+
+	t := templates.Lookup("index.tmpl").Lookup("about")
 	t.Execute(w, IndexTmpl{count, latestCreated})
 	return 200
 }

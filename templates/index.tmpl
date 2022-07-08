@@ -3,12 +3,18 @@
 <html>
 <head>
 	<link rel="stylesheet" href="res/index.css">
+	<link rel="stylesheet" href="res/navbar.css">
 	<title>Bettit - archived threads</title>
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 </head>
 <body>
 <div class="navbar">
+	<div class="navbar-left">
+		<a href="/about">About</a>
+	</div>
 	<h5><b>Hosting a total of {{.TotalArchived}} archived threads.</b></h5>
+	<div class="navbar-right">
+	</div>
 </div>
 
 <div class="center">
@@ -28,6 +34,46 @@
 			{{ end }}
 		{{ end }}
 	</table></div>
+</div>
+
+<div class="footer">
+	<span>Donate:</span>
+	<span class="crypto-addr">XMR: <code>48QiCovstDPbHtMR5DP8tp3fUgguVUcdUX2pjbh6utt88fMe5h233ZnY7PxxdQYCjrVuCBQA2D8JBYU7rH2MdVDHFKd7QJi</code></span>
+	<span class="crypto-addr">ETH: <code>0x343f3328a56b5e25BaB1d9D89E9fa9F2aCf28b87</code></span>
+	<a href="https://www.buymeacoffee.com/ilmari">☕ Buy Me a Coffee</a>
+</div>
+
+</body>
+</html>
+
+{{ end }}
+
+{{ define "about" }}
+<!DOCTYPE html>
+<html>
+<head>
+	<link rel="stylesheet" href="res/index.css">
+	<link rel="stylesheet" href="res/navbar.css">
+	<title>Bettit - archived threads</title>
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body>
+<div class="navbar">
+	<div class="navbar-left">
+		<a href="/">Back</a>
+	</div>
+	<h5><b>Hosting a total of {{.TotalArchived}} archived threads.</b></h5>
+	<div class="navbar-right">
+	</div>
+</div>
+
+<div class="center about-page">
+	<p>
+	Bettit.org is an archive of discussion threads on reddit.com.
+	The site aims to provide access to information, without serving users with heavy code bundles or require logging in with a mobile app. In fact, the site has no JavaScript whatsoever, just plain HTML and some style sheets.
+	<br>
+	The source code is available on <a href="https://github.com/ilmari-h/bettit">GitHub</a>, licensed under GPL-3.0.
+	</p>
 </div>
 
 </body>

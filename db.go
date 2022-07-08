@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"html"
 	"html/template"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -48,7 +49,7 @@ func InitDatabase() {
 			author TEXT,
 			timestamp INTEGER,
 			archive_timestamp INTEGER,
-			CONSTRAINT unq UNIQUE(thread_id, replies_num, continuing_reply),
+			CONSTRAINT unq UNIQUE(thread_id, continuing_reply),
 			CONSTRAINT chk_id CHECK(LENGTH(thread_id) >= 6)
 			CONSTRAINT chk_title CHECK(LENGTH(title) > 1)
 			CONSTRAINT chk_sub CHECK(LENGTH(sub) > 1)
@@ -98,7 +99,6 @@ func InitDatabase() {
 	}
 
 	dbReadOnly, _ = sql.Open("sqlite3", "file:./bettit.db?mode=rw&_busy_timeout=9999999")
-	LoadTemplates()
 }
 
 func queryLatestArchives(limit int) (error, []ArchiveLinkTmpl) {
@@ -132,7 +132,7 @@ func queryReadThread(threadId string) *template.Template {
 // Post a new comment to the database and all replies to it.
 // Recursive function.
 //
-func (dbtx *DbTransaction) txPostComment(
+func (dbtx *ThreadDbTx) txPostComment(
 	data gjson.Result,
 	threadId string,
 	threadKey int64,
@@ -157,9 +157,15 @@ func (dbtx *DbTransaction) txPostComment(
 		parentStr = fmt.Sprintf("%d", parent)
 	}
 
+	// For now, don't load links unless continuing a comment thread.
+	isLink := author == "" && content == ""
+	if isLink {
+		return nil
+	}
+
 	var insertId int64 = -1
 	if statement, err := dbtx.tx.Prepare(`
-		INSERT INTO comments (
+		REPLACE INTO comments (
 			comment_id,
 			content,
 			author,
@@ -226,7 +232,7 @@ func (dbtx *DbTransaction) txPostComment(
 	return nil
 }
 
-func (dbtx *DbTransaction) txPostThread(data []byte, sub string, fromReply string) error {
+func (dbtx *ThreadDbTx) txPostThread(data []byte, sub string, fromReply string) error {
 
 	// Add first post as thread.
 	thrBody := gjson.GetBytes(data, "0.data.children.0.data.selftext_html").String()
@@ -238,9 +244,14 @@ func (dbtx *DbTransaction) txPostThread(data []byte, sub string, fromReply strin
 	thrRepliesNum := gjson.GetBytes(data, "0.data.children.0.data.num_comments").Int()
 	thrTimestamp := gjson.GetBytes(data, "0.data.children.0.data.created").Int()
 
+	// If link is internal.
+	if strings.HasPrefix(thrBodyLink, "/") {
+		thrBodyLink = "https://reddit.com" + thrBodyLink
+	}
+
 	// TODO overwrite if previous older version exists.
 	thrStmnt, stmntErr := dbtx.tx.Prepare(`
-		INSERT INTO threads (
+		REPLACE INTO threads (
 			thread_id,
 			continuing_reply,
 			replies_num,
@@ -308,12 +319,13 @@ func (dbtx *DbTransaction) txPostThread(data []byte, sub string, fromReply strin
 
 }
 
-type DbTransaction struct {
+type ThreadDbTx struct {
 	dbConnection *sql.DB
 	tx           *sql.Tx
+	upsert       bool
 }
 
-func NewTransaction() (*DbTransaction, error) {
+func NewTransaction(upsert bool) (*ThreadDbTx, error) {
 	db, oerr := sql.Open("sqlite3", "file:./bettit.db?mode=rw&_busy_timeout=9999999")
 	db.SetMaxOpenConns(1)
 	if oerr != nil {
@@ -323,17 +335,18 @@ func NewTransaction() (*DbTransaction, error) {
 	if berr != nil {
 		return nil, berr
 	}
-	return &DbTransaction{
+	return &ThreadDbTx{
 		db,
 		tx,
+		upsert,
 	}, nil
 }
 
-func (dbtx *DbTransaction) rollback() {
+func (dbtx *ThreadDbTx) rollback() {
 	dbtx.tx.Rollback()
 	dbtx.dbConnection.Close()
 }
-func (dbtx *DbTransaction) done() {
+func (dbtx *ThreadDbTx) done() {
 	dbtx.tx.Commit()
 	dbtx.dbConnection.Close()
 }
@@ -363,17 +376,17 @@ func GetArchiveQuery(threadId string, replyId string) (*ArchiveTmpl, error) {
 
 	thrNumId := 0
 	thrRepliesC := 0
-	thrTs := ThreadTmpl{}
+	thrTmpl := ThreadTmpl{}
 	thrTimestamp := 0
 	arcTimestamp := 0
 	rows.Scan(
 		&thrNumId,
 		&thrRepliesC,
-		&thrTs.Subreddit,
-		&thrTs.ThreadTitle,
-		&thrTs.ThreadContent,
-		&thrTs.ThreadContentLink,
-		&thrTs.Author,
+		&thrTmpl.Subreddit,
+		&thrTmpl.ThreadTitle,
+		&thrTmpl.ThreadContent,
+		&thrTmpl.ThreadContentLink,
+		&thrTmpl.Author,
 		&thrTimestamp,
 		&arcTimestamp,
 	)
@@ -381,9 +394,11 @@ func GetArchiveQuery(threadId string, replyId string) (*ArchiveTmpl, error) {
 	rows.Close()
 
 	// Nothing found.
-	if thrTimestamp == 0 {
+	if arcTimestamp == 0 {
 		return nil, nil
 	}
+
+	thrTmpl.Time = time.Unix(int64(thrTimestamp), 0).Format("02 Jan 2006")
 
 	//
 	// Query each comment and its replies starting from the original post.
@@ -412,19 +427,28 @@ func GetArchiveQuery(threadId string, replyId string) (*ArchiveTmpl, error) {
 			return nil, LogE(&DbError{"Error with comment query", qerr.Error()})
 		}
 		for rows.Next() {
-			r := &CommentTmpl{}
+			copmTmpl := &CommentTmpl{}
 			rId := -1
 			rTimestamp := 0
-			rows.Scan(&rId, &r.CommentId, &r.CommentContent, &r.Author, &rTimestamp, &r.Continues, &r.Score)
-			r.ThreadId = threadId
+			rows.Scan(
+				&rId,
+				&copmTmpl.CommentId,
+				&copmTmpl.CommentContent,
+				&copmTmpl.Author,
+				&rTimestamp,
+				&copmTmpl.Continues,
+				&copmTmpl.Score,
+			)
+			copmTmpl.Time = time.Unix(int64(rTimestamp), 0).Format("02 Jan 2006")
+			copmTmpl.ThreadId = threadId
 			queue = append(queue, struct {
 				id string
 				p  *CommentTmpl
-			}{fmt.Sprintf("%d", rId), r})
+			}{fmt.Sprintf("%d", rId), copmTmpl})
 			if currentParent == nil {
-				thrTs.Replies = append(thrTs.Replies, r)
+				thrTmpl.Replies = append(thrTmpl.Replies, copmTmpl)
 			} else {
-				currentParent.Children = append(currentParent.Children, r)
+				currentParent.Children = append(currentParent.Children, copmTmpl)
 			}
 		}
 		rows.Close()
@@ -432,14 +456,14 @@ func GetArchiveQuery(threadId string, replyId string) (*ArchiveTmpl, error) {
 
 	t := templates.Lookup("thread.tmpl").Lookup("thread")
 	thrBuf := new(bytes.Buffer)
-	t.Execute(thrBuf, thrTs)
+	t.Execute(thrBuf, thrTmpl)
 
 	arcTs := ArchiveTmpl{
 		time.Unix(int64(arcTimestamp), 0).Format("02 Jan 2006"),
 		threadId,
-		thrTs.ThreadTitle,
+		thrTmpl.ThreadTitle,
 		replyId,
-		thrTs.Subreddit,
+		thrTmpl.Subreddit,
 		template.HTML(html.UnescapeString(thrBuf.String())),
 	}
 
@@ -451,21 +475,36 @@ func archiveThread(sub string, data []byte) error {
 	thrId := gjson.GetBytes(data, "0.data.children.0.data.id").String()
 	thrRepliesNum := gjson.GetBytes(data, "0.data.children.0.data.num_comments").Int()
 
-	// Check that thread (with same or higher amount of posts) is not already archived.
-	rows, _ := dbReadOnly.Query(
-		`SELECT 1 FROM threads WHERE thread_id = ? AND replies_num >= ?`,
+	// Check that thread (with same or higher amount of replies) is not already archived.
+	rows, _ := dbReadOnly.Query(`
+		SELECT replies_num FROM threads
+			WHERE thread_id = ? AND continuing_reply = ""
+			LIMIT 1
+		`,
 		thrId,
 		thrRepliesNum,
 	)
+
+	upsert := false
 	if rows.Next() {
-		rows.Close()
-		return &DbError{"Thread is already archived", ""}
+		existingReplies := 0
+		rows.Scan(&existingReplies)
+		if existingReplies >= int(thrRepliesNum) {
+			rows.Close()
+			return &DbError{"Thread is already archived", "Same thread with equal number or more replies exists"}
+		} else {
+			Log(
+				"Updating existing thread.",
+				fmt.Sprintf("New replies: %d - Previous replies: %d", thrRepliesNum, existingReplies),
+			).Debug()
+			upsert = true
+		}
 	}
 	rows.Close()
 
-	// Do heavy lifting in a separate goroutine.
+	// Archive thread in another goroutine, return before for sending response.
 	go func() {
-		tx, txerr := NewTransaction()
+		tx, txerr := NewTransaction(upsert)
 		if txerr != nil {
 			Log("Error starting transaction", txerr.Error()).Error()
 		}

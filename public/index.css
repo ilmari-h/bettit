@@ -55,5 +55,40 @@ h5 {
   margin-top: 10px;
 }
 td {
-  max-width: 400px;
+  max-width: 310px;
+}
+
+.about-page {
+  max-width: 600px;
+  width: 100%;
+}
+.about-page p {
+  margin: 10px;
+}
+
+.footer {
+  background: var(--accent-red);
+  padding: 4px 0px;
+  width: 100%;
+  position: fixed;
+  bottom: 0px;
+  color: white;
+  padding-left: 10px;
+  font-size: 12px;
+}
+.footer span {
+  margin-right: 10px;
+}
+.footer code {
+  background-color: black;
+  border-radius: 5px;
+  padding: 1px;
+}
+
+.footer .crypto-addr {
+  display: inline-block;
+}
+.footer a {
+  color: var(--accent-fg);
+  display: inline-block;
 }

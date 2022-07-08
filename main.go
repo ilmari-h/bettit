@@ -123,11 +123,8 @@ REDDIT_APP_SECRET
 
 	InitAPI()
 	InitDatabase()
-	r := GettitRouter(RouterOptions{
-		GetCacheTime:       60,
-		GetCacheExpiration: 15 * 60,
-		PostCacheTime:      120,
-	})
+	LoadTemplates()
+	r := GettitRouter(nRouterOpts)
 	r.Static("/res", "./public")
 	r.Run()
 }

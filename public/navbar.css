@@ -1,0 +1,26 @@
+.navbar {
+  background: var(--accent-red);
+  padding: 4px 0px;
+  width: 100%;
+  color: white;
+  text-align: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.navbar h5 {
+  display: block;
+  flex-grow: 1;
+}
+
+.navbar-left {
+  width: 50px;
+}
+
+.navbar-right {
+  width: 50px;
+}
+
+.navbar a {
+  color: var(--accent-fg);
+}
