@@ -1,8 +1,7 @@
-
 # Bettit
-![example workflow](https://github.com/ilmari-h/bettit/actions/workflows/go.yml/badge.svg)
+![tests_badge](https://github.com/ilmari-h/bettit/actions/workflows/go.yml/badge.svg)
 
-Bettit (stands for better archives for Reddit) is an archival web service for Reddit.
+Bettit (stands for better archives for Reddit) is an archival website for Reddit.
 
 Reddit hosts countless threads of valuable information.
 Unfortunately that information is trapped behind a heavy web bundle, with long load times and an opinion dividing user experience.
