@@ -1,5 +1,5 @@
 # Bettit
-![tests_badge](https://github.com/ilmari-h/bettit/actions/workflows/go.yml/badge.svg)
+[![Go Report Badge](https://goreportcard.com/badge/github.com/ilmari-h/bettit)](https://goreportcard.com/report/github.com/ilmari-h/bettit) ![Test Run Badge](https://github.com/ilmari-h/bettit/actions/workflows/go.yml/badge.svg) 
 
 Bettit (stands for better archives for Reddit) is an archival website for Reddit.
 
