@@ -1,4 +1,4 @@
-module github.com/ilmari-h/bettitgithub.com/ilmari-h/bettit
+module github.com/ilmari-h/bettit
 
 go 1.18
 
