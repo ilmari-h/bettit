@@ -11,6 +11,8 @@
 !README.md
 !LICENSE
 !NOTICE
+!Dockerfile
+!docker-compose.yml
 !templates/*
 !debug.sh
 !public/*

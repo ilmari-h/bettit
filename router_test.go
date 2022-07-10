@@ -16,6 +16,8 @@ var routerOptsT = RouterOptions{
 	GetCacheTime:       1,
 	GetCacheExpiration: 1,
 	PostCacheTime:      1,
+	PostRateLimitD:     60,
+	PostRateLimitN:     5,
 }
 var router *gin.Engine = GettitRouter(routerOptsT)
 

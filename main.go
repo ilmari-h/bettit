@@ -9,7 +9,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/pborman/getopt/v2"
 	log "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
@@ -81,18 +80,8 @@ func InitAPI() {
 }
 
 func init() {
-
-	if gin.IsDebugging() {
-		log.SetLevel(log.DebugLevel)
-		log.SetOutput(os.Stdout)
-	} else {
-		log.SetLevel(log.InfoLevel)
-		file, err := os.OpenFile("/var/log/bettit.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
-		if err != nil {
-			log.Fatal("Can't open log file for writing:", err.Error())
-		}
-		log.SetOutput(file)
-	}
+	log.SetLevel(log.DebugLevel)
+	log.SetOutput(os.Stdout)
 }
 
 func main() {

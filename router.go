@@ -195,7 +195,7 @@ func GettitRouter(opts RouterOptions) *gin.Engine {
 	})
 	r.GET("/:threadid", cache.CacheByRequestURI(memCache, getCacheTime), routeGetPage)
 
-	postRateLimit := ratelimiter.NewRateLimiter(
+	limitRateByIP := ratelimiter.NewRateLimiter(
 		time.Second*time.Duration(routerOptions.PostRateLimitD),
 		int64(routerOptions.PostRateLimitN),
 		func(ctx *gin.Context) (string, error) {
@@ -206,6 +206,6 @@ func GettitRouter(opts RouterOptions) *gin.Engine {
 		},
 	)
 
-	r.POST("/archive", postRateLimit.LimitRate(), routePostArchive)
+	r.POST("/archive", limitRateByIP.LimitRate(), routePostArchive)
 	return r
 }

@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/tidwall/gjson"
 )
@@ -24,9 +23,7 @@ type DbError struct {
 
 func (err *DbError) Error() string {
 	errDisplay := err.message
-	if gin.IsDebugging() {
-		errDisplay += fmt.Sprintf(": %s", err.details)
-	}
+	errDisplay += fmt.Sprintf(": %s", err.details)
 	return errDisplay
 }
 
