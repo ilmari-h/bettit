@@ -5,6 +5,7 @@ go 1.18
 require (
 	github.com/chenyahui/gin-cache v1.7.0
 	github.com/gin-gonic/gin v1.8.1
+	github.com/juju/ratelimit v1.0.1
 	github.com/mattn/go-sqlite3 v1.14.13
 	github.com/pborman/getopt/v2 v2.1.0
 	github.com/sirupsen/logrus v1.8.1

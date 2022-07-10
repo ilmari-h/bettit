@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/ilmari-h/bettit/ratelimiter"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -42,6 +43,8 @@ type RouterOptions struct {
 	GetCacheTime       int
 	GetCacheExpiration int
 	PostCacheTime      int
+	PostRateLimitD     int
+	PostRateLimitN     int
 }
 
 var routerOptions RouterOptions
@@ -191,6 +194,18 @@ func GettitRouter(opts RouterOptions) *gin.Engine {
 		c.String(http.StatusOK, "API is live.")
 	})
 	r.GET("/:threadid", cache.CacheByRequestURI(memCache, getCacheTime), routeGetPage)
-	r.POST("/archive", routePostArchive)
+
+	postRateLimit := ratelimiter.NewRateLimiter(
+		time.Second*time.Duration(routerOptions.PostRateLimitD),
+		int64(routerOptions.PostRateLimitN),
+		func(ctx *gin.Context) (string, error) {
+			return ctx.ClientIP(), nil
+		},
+		func(c *gin.Context, key string) {
+			RenderErrorPage(429, c.Writer)
+		},
+	)
+
+	r.POST("/archive", postRateLimit.LimitRate(), routePostArchive)
 	return r
 }

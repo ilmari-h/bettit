@@ -101,6 +101,14 @@ func main() {
 	clientOptions.Timeout = *getopt.IntLong("client-timeout", 'c', 5, "Timeout for requests made to Reddit API.")
 	nRouterOpts.GetCacheTime = *getopt.IntLong("get-cache-time", 'g', 60, "Time in seconds for caching GET-requests.")
 	nRouterOpts.GetCacheExpiration = *getopt.IntLong("get-cache-exp", 'e', 300, "Expiry time in seconds for GET-requests.")
+	nRouterOpts.PostRateLimitN = *getopt.IntLong("post-rate-limit-numerator", 'r', 5,
+		`Numerator of the post rate limit.
+The default denominator being 60 seconds, that means default rate is 5 per minute.`,
+	)
+	nRouterOpts.PostRateLimitD = *getopt.IntLong("post-rate-limit-denominator", 'd', 60,
+		`Denominator of the post rate limit.
+By default 60, the default numerator being 5, that means default rate is 5 per minute.`,
+	)
 	nRouterOpts.PostCacheTime = *getopt.IntLong("post-cache-time", 'p', 3600,
 		`Time in seconds for blocking identical POST-requests to /archive -endpoint.
 An archive request initiates an request to the Reddit API.
