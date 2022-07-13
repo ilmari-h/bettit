@@ -8,5 +8,5 @@ res=$(curl -f -s -X POST -d "grant_type=password&username=$REDDIT_APP_DEV_NAME&p
 
 [[ -z "$res" ]] && ( echo "Error fetching API access token." ; exit 1 )
 
-export REDDIT_API_ACCESS_TOKEN="$(echo $res | jq '.access_token')"
+export REDDIT_API_ACCESS_TOKEN="$(echo $res | jq --raw-output '.access_token')"
 ./bettit
