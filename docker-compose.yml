@@ -7,4 +7,4 @@ services:
     ports:
       - "${BETTIT_HOST_PORT}:8080"
     volumes:
-      - "./bettit.db:/var/lib/bettit/bettit.db"
+      - "./bettit.db:/var/lib/bettit/bettit.db.d"

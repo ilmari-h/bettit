@@ -9,7 +9,7 @@ WORKDIR /app
 
 COPY ./ /app/
 
-RUN apk add --no-cache curl jq
+RUN apk add --no-cache curl jq bash
 
 RUN go build
 

@@ -16,6 +16,8 @@ import (
 
 var apiToken string = ""
 
+const DBFILE = "./bettit.db.d/bettit.db"
+
 type ClientOptions struct {
 	Timeout int
 }

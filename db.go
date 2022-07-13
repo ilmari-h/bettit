@@ -28,7 +28,7 @@ func (err *DbError) Error() string {
 }
 
 func InitDatabase() {
-	db, errOpen := sql.Open("sqlite3", "./bettit.db")
+	db, errOpen := sql.Open("sqlite3", DBFILE)
 	if errOpen != nil {
 		Log("Error opening database", errOpen.Error()).Fatal()
 	}
@@ -95,7 +95,7 @@ func InitDatabase() {
 		statement.Exec()
 	}
 
-	dbReadOnly, _ = sql.Open("sqlite3", "file:./bettit.db?mode=rw&_busy_timeout=9999999")
+	dbReadOnly, _ = sql.Open("sqlite3", fmt.Sprintf("file:%s?mode=rw&_busy_timeout=9999999", DBFILE))
 }
 
 func queryLatestArchives(limit int) (error, []ArchiveLinkTmpl) {
@@ -323,7 +323,7 @@ type ThreadDbTx struct {
 }
 
 func NewTransaction(upsert bool) (*ThreadDbTx, error) {
-	db, oerr := sql.Open("sqlite3", "file:./bettit.db?mode=rw&_busy_timeout=9999999")
+	db, oerr := sql.Open("sqlite3", fmt.Sprintf("file:%s?mode=rw&_busy_timeout=9999999", DBFILE))
 	db.SetMaxOpenConns(1)
 	if oerr != nil {
 		return nil, oerr
