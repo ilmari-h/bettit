@@ -97,7 +97,7 @@ func NewThreadRequest(sub string, threadId string, commentId string) (*http.Requ
 		requestUrl = fmt.Sprintf("https://oauth.reddit.com/r/%s/comments/%s/comment/%s?sort=confidence.json", sub, threadId, commentId)
 	}
 	req, err := http.NewRequest(http.MethodGet, requestUrl, nil)
-	req.Header.Set("User-Agent", "Bettit-API/0.1, Archives for Reddit Threads")
+	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Authorization", "bearer "+apiToken)
 
 	// Validate request correctness.

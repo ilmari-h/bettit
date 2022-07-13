@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"runtime"
 	"time"
 
 	"github.com/pborman/getopt/v2"
@@ -15,6 +16,9 @@ import (
 )
 
 var apiToken string = ""
+var userAgent string = ""
+
+const APPVER = "v1.0.3"
 
 const DBFILE = "./bettit.db.d/bettit.db"
 
@@ -40,17 +44,24 @@ func LogE(e *DbError) error {
 }
 
 func FetchAPIToken() string {
+
+	username := os.Getenv("REDDIT_APP_DEV_NAME")
+	if username == "" {
+		log.Fatal("Environment variable REDDIT_APP_DEV_NAME is not defined")
+	}
+	userAgent = fmt.Sprintf("%s:bettit-api:%s (by /u/%s)", runtime.GOOS, APPVER, username)
+	Log("User agent", userAgent).Info()
+
 	if token := os.Getenv("REDDIT_API_ACCESS_TOKEN"); token != "" {
 		log.Info("Using pre-fetched API token.")
 		return token
 	}
-	username := os.Getenv("REDDIT_APP_DEV_NAME")
-	password := os.Getenv("REDDIT_APP_DEV_PW")
 	id := os.Getenv("REDDIT_APP_ID")
+	password := os.Getenv("REDDIT_APP_DEV_PW")
 	secret := os.Getenv("REDDIT_APP_SECRET")
 
-	if username == "" || password == "" || id == "" || secret == "" {
-		log.Fatal("Environment variables are not defined")
+	if password == "" || secret == "" || id == "" {
+		log.Fatal("Environment variables for API access token request are not defined")
 	}
 
 	client := http.Client{
@@ -64,7 +75,7 @@ func FetchAPIToken() string {
 	)
 
 	req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(id+":"+secret)))
-	req.Header.Set("User-Agent", "Bettit-API/0.1, Archives for Reddit Threads")
+	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	resp, err := client.Do(req)
