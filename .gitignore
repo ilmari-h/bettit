@@ -16,6 +16,7 @@
 !templates/*
 !debug.sh
 !public/*
+!start_with_token.sh
 
 # !Makefile
 

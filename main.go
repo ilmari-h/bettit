@@ -37,7 +37,11 @@ func LogE(e *DbError) error {
 	return e
 }
 
-func InitAPI() {
+func FetchAPIToken() string {
+	if token := os.Getenv("REDDIT_API_ACCESS_TOKEN"); token != "" {
+		log.Info("Using pre-fetched API token.")
+		return token
+	}
 	username := os.Getenv("REDDIT_APP_DEV_NAME")
 	password := os.Getenv("REDDIT_APP_DEV_PW")
 	id := os.Getenv("REDDIT_APP_ID")
@@ -70,13 +74,16 @@ func InitAPI() {
 		if bodyErr != nil {
 			Log("Error fetching API token", bodyErr.Error()).Fatal()
 		}
-		apiToken = gjson.GetBytes(body, "access_token").String()
-		if apiToken != "" {
+		token := gjson.GetBytes(body, "access_token").String()
+		if token != "" {
 			log.Info("Successfully fetched new API token")
+			return token
 		} else {
 			Log("Error fetching API token", string(body)).Fatal()
 		}
 	}
+	Log("Error fetching API token", "Unknown error").Fatal()
+	return ""
 }
 
 func init() {
@@ -110,6 +117,9 @@ To avoid unnecessary requests, this option is used.`,
 Make sure the following environment variables are defined to access Reddit API.
 They are defined by creating a 'script' type application on: https://www.reddit.com/prefs/apps
 
+REDDIT_API_ACCESS_TOKEN
+	Access token for your script application from: https://www.reddit.com/api/v1/access_token
+	If this is defined, the following environment variables are not required.
 REDDIT_APP_DEV_NAME
 	Name of the user set as developer for your application on Reddit.
 REDDIT_APP_DEV_PW
@@ -122,7 +132,7 @@ REDDIT_APP_SECRET
 	})
 	getopt.Parse()
 
-	InitAPI()
+	apiToken = FetchAPIToken()
 	InitDatabase()
 	LoadTemplates()
 	r := GettitRouter(nRouterOpts)

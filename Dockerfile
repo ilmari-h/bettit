@@ -3,15 +3,16 @@ RUN apk add build-base
 
 RUN mkdir /app
 
-ENV GIN_MODE=production
+ENV GIN_MODE=release
 
 WORKDIR /app
 
 COPY ./ /app/
-RUN ls -la /app/*
+
+RUN apk add --no-cache curl jq
 
 RUN go build
 
 EXPOSE 8080
 
-CMD ["./bettit"]
+CMD ["./start_with_token.sh"]
