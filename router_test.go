@@ -23,7 +23,7 @@ var router *gin.Engine = GettitRouter(routerOptsT)
 
 func ReloadTestEnv() {
 	router = GettitRouter(routerOptsT)
-	InitAPI()
+	apiToken = FetchAPIToken()
 	InitDatabase()
 	LoadTemplates()
 }

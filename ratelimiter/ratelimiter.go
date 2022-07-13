@@ -18,7 +18,7 @@ func NewRateLimiter(
 	interval time.Duration,
 	capacity int64,
 	getRateKey func(c *gin.Context) (string,error),
-	onLimitReached func(c *gin.Context, key string),
+	onLimitReached func(c *gin.Context, key string), // TODO: instead of this, allow overwriting member func using another method?
 ) RateLimiter {
 
 	return RateLimiter{
