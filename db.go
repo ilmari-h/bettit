@@ -95,6 +95,15 @@ func InitDatabase() {
 		statement.Exec()
 	}
 
+	// Create index for sub in threads. Need to be able to query by sub.
+	if statement, err := db.Prepare(`
+		CREATE INDEX IF NOT EXISTS threads_sub_index ON threads(sub)
+	`); err != nil {
+		Log("Error creating database index", err.Error()).Fatal()
+	} else {
+		statement.Exec()
+	}
+
 	dbReadOnly, _ = sql.Open("sqlite3", fmt.Sprintf("file:%s?mode=rw&_busy_timeout=9999999", DBFILE))
 }
 
@@ -107,8 +116,7 @@ func queryLatestArchives(limit int) (error, []ArchiveLinkTmpl) {
 		ORDER BY archive_timestamp DESC
 		LIMIT 10`,
 	); qErr != nil {
-		rowsLatest.Close()
-		Log("Error latest thread query", qErr.Error()).Error()
+		Log("Error in latest thread query", qErr.Error()).Error()
 		return &DbError{"Error with thread count query", qErr.Error()}, nil
 	} else {
 		defer rowsLatest.Close()
@@ -122,8 +130,47 @@ func queryLatestArchives(limit int) (error, []ArchiveLinkTmpl) {
 	return nil, results
 }
 
-func queryReadThread(threadId string) *template.Template {
-	return nil
+func querySubArchives(page, pageLen int, sub string) (error, []ArchiveLinkTmpl) {
+	results := []ArchiveLinkTmpl{}
+	if rowsLatest, qErr := dbReadOnly.Query(`
+		SELECT archive_timestamp, thread_id, title, sub
+		FROM threads
+		WHERE continuing_reply = "" AND sub = ?
+		ORDER BY archive_timestamp DESC
+		LIMIT ?, ?`, sub, page*pageLen, pageLen,
+	); qErr != nil {
+		Log("Error in sub thread query", qErr.Error()).Error()
+		return &DbError{"Error with thread count query", qErr.Error()}, nil
+	} else {
+		defer rowsLatest.Close()
+		for rowsLatest.Next() {
+			nRes := ArchiveLinkTmpl{}
+			rowsLatest.Scan(&nRes.ArchiveTime, &nRes.ThreadId, &nRes.ThreadTitle, &nRes.Subreddit)
+			results = append(results, nRes)
+		}
+	}
+	return nil, results
+}
+
+func querySubsList(page, pageLen int) (error, *SubsListTmpl) {
+	subsOnPage := []string{}
+	if rows, qErr := dbReadOnly.Query(`
+		SELECT DISTINCT sub
+		FROM threads
+		ORDER BY sub
+		LIMIT ?, ?`, page*pageLen, pageLen,
+	); qErr != nil {
+		Log("Error in list subs query", qErr.Error()).Error()
+		return &DbError{"Error in list subs query", qErr.Error()}, nil
+	} else {
+		defer rows.Close()
+		for rows.Next() {
+			sub := ""
+			rows.Scan(&sub)
+			subsOnPage = append(subsOnPage, sub)
+		}
+	}
+	return nil, &SubsListTmpl{page, subsOnPage}
 }
 
 // Post a new comment to the database and all replies to it.

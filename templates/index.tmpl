@@ -10,7 +10,6 @@
 <body>
 <div class="navbar">
 	<div class="navbar-left">
-		<a href="/about">About</a>
 	</div>
 	<h5><b>Hosting a total of {{.TotalArchived}} archived threads.</b></h5>
 	<div class="navbar-right">
@@ -18,6 +17,12 @@
 </div>
 
 <div class="center">
+	<span>
+	<a href="/about">About</a> |
+	<a href="/subs">Browse by subreddit</a> |
+	<a href="https://github.com/ilmari-h/bettit">Project repo</a>
+	</span>
+	<br>
 	<form action="/archive" method="POST">
 		<input id="archivef" name="archivef" type="text" placeholder="Enter post url.">
 		<button>archive</button>
@@ -26,13 +31,7 @@
 		<tr>
 			<th>Recently archived:</th>
 		</tr>
-		{{ if gt (len .Latest) 0 }}
-			{{ range .Latest }}
-				<tr><td>
-					<strong>r/{{ .Subreddit }}</strong>: <a href="/{{ .ThreadId }}">{{ .ThreadTitle }}</a>
-				</td></tr>
-			{{ end }}
-		{{ end }}
+		{{ template "threadListing" .Latest }}
 	</table></div>
 </div>
 
@@ -45,7 +44,16 @@
 
 </body>
 </html>
+{{ end }}
 
+{{ define "threadListing" }}
+	{{ if gt (len . ) 0 }}
+		{{ range .  }}
+			<tr><td>
+				<strong>r/{{ .Subreddit }}</strong>: <a href="/{{ .ThreadId }}">{{ .ThreadTitle }}</a>
+			</td></tr>
+		{{ end }}
+	{{ end }}
 {{ end }}
 
 {{ define "about" }}
@@ -75,6 +83,70 @@
 	The source code is available on <a href="https://github.com/ilmari-h/bettit">GitHub</a>, licensed under AGPL-3.0.
 	</p>
 </div>
+
+</body>
+</html>
+{{ end }}
+
+{{ define "sublist" }}
+<!DOCTYPE html>
+<html>
+<head>
+	<link rel="stylesheet" href="/res/page.css">
+	<link rel="stylesheet" href="/res/navbar.css">
+	<title>Subreddits</title>
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body>
+
+<div class="navbar">
+	<div class="navbar-left">
+		<a href="/">Index</a>
+	</div>
+	<h5><b>Subreddits with archived threads</b></h5>
+	<div class="navbar-right"></div>
+</div>
+
+<div>
+	<ul>
+		{{ range .Subs }}
+		<a href="/subs/{{ . }}"><li>{{ . }}</li></a>
+		{{ end }}
+	</ul>
+</div>
+
+</body>
+</html>
+{{ end }}
+
+{{ define "subthreads" }}
+<!DOCTYPE html>
+<html>
+<head>
+	<link rel="stylesheet" href="/res/page.css">
+	<link rel="stylesheet" href="/res/navbar.css">
+	<title>Subreddits</title>
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body>
+
+<div class="navbar">
+	<div class="navbar-left">
+		<a href="/">Index</a>
+	</div>
+	<h5><b>Subreddits with archived threads</b></h5>
+	<div class="navbar-right"></div>
+</div>
+
+<ul>
+{{ if gt (len .Threads ) 0 }}
+	{{ range .Threads  }}
+		<li>
+			<strong>r/{{ .Subreddit }}</strong>: <a href="/{{ .ThreadId }}">{{ .ThreadTitle }}</a>
+		</li>
+	{{ end }}
+{{ end }}
+</ul>
 
 </body>
 </html>

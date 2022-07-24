@@ -2,13 +2,15 @@ package main
 
 import (
 	"fmt"
-	"github.com/ilmari-h/bettit/ratelimiter"
 	"io/ioutil"
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/ilmari-h/bettit/ratelimiter"
 
 	"github.com/chenyahui/gin-cache"
 	"github.com/chenyahui/gin-cache/persist"
@@ -86,6 +88,27 @@ func routeGetIndex(c *gin.Context) {
 }
 func routeGetAbout(c *gin.Context) {
 	if status := RenderAboutPage(c.Writer); status != 200 {
+		RenderErrorPage(status, c.Writer)
+	}
+}
+
+func routeSubsList(c *gin.Context) {
+	page := 0
+	if qPage, err := strconv.Atoi(c.Query("page")); err == nil {
+		page = qPage
+	}
+	if status := RenderSubsList(page, c.Writer); status != 200 {
+		RenderErrorPage(status, c.Writer)
+	}
+}
+
+func routeSubThreads(c *gin.Context) {
+	sub := c.Param("subId")
+	page := 0
+	if qPage, err := strconv.Atoi(c.Query("page")); err == nil {
+		page = qPage
+	}
+	if status := RenderSubThreads(page, c.Writer, sub); status != 200 {
 		RenderErrorPage(status, c.Writer)
 	}
 }
@@ -190,6 +213,8 @@ func GettitRouter(opts RouterOptions) *gin.Engine {
 	r := gin.Default()
 	r.GET("/", cache.CacheByRequestURI(memCache, getCacheTime), routeGetIndex)
 	r.GET("/about", cache.CacheByRequestURI(memCache, getCacheTime), routeGetAbout)
+	r.GET("/subs", routeSubsList)
+	r.GET("/subs/:subId", routeSubThreads)
 	r.GET("/health", func(c *gin.Context) {
 		c.String(http.StatusOK, "API is live.")
 	})

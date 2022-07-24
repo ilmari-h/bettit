@@ -9,6 +9,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+const ITEMS_ON_PAGE = 100
+
 //
 // Types used in templates.
 //
@@ -18,11 +20,21 @@ type IndexTmpl struct {
 	Latest        []ArchiveLinkTmpl // urls
 }
 
+type SubThreadsTmpl struct {
+	page    int
+	Threads []ArchiveLinkTmpl // urls
+}
+
 type ArchiveLinkTmpl struct {
 	ArchiveTime int
 	ThreadId    string
 	ThreadTitle string
 	Subreddit   string
+}
+
+type SubsListTmpl struct {
+	page int
+	Subs []string
 }
 
 type ArchiveTmpl struct {
@@ -118,6 +130,26 @@ func RenderAlreadyExists(route string, w gin.ResponseWriter) {
 	tp.Execute(w, RedirectTmpl{
 		Route: route,
 	})
+}
+
+func RenderSubsList(page int, w gin.ResponseWriter) int {
+	if err, sTmpl := querySubsList(page, ITEMS_ON_PAGE); err != nil {
+		return 500
+	} else {
+		tp := templates.Lookup("index.tmpl").Lookup("sublist")
+		tp.Execute(w, sTmpl)
+	}
+	return 200
+}
+
+func RenderSubThreads(page int, w gin.ResponseWriter, sub string) int {
+	if err, sTmpl := querySubArchives(page, ITEMS_ON_PAGE, sub); err != nil {
+		return 500
+	} else {
+		tp := templates.Lookup("index.tmpl").Lookup("subthreads")
+		tp.Execute(w, &SubThreadsTmpl{page, sTmpl})
+	}
+	return 200
 }
 
 func RenderIndexPage(w io.Writer) int {
