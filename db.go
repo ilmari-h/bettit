@@ -175,7 +175,6 @@ func querySubsList(page, pageLen int) (error, *SubsListTmpl) {
 
 // Post a new comment to the database and all replies to it.
 // Recursive function.
-//
 func (dbtx *ThreadDbTx) txPostComment(
 	data gjson.Result,
 	threadId string,

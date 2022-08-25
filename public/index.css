@@ -34,17 +34,9 @@ h5 {
 h5 {
   font-style: normal;
 }
-.navbar {
-  background: var(--accent-red);
-  padding: 4px 0px;
-  width: 100%;
-  color: white;
-  text-align: center;
-  position: absolute;
-}
 
 .center {
-  height: 95%;
+  padding: 46px;
   display: flex;
   margin: auto;
   justify-content: center;
@@ -67,9 +59,9 @@ td {
 }
 
 .footer {
+  width: 100%;
   background: var(--accent-red);
   padding: 4px 0px;
-  width: 100%;
   position: fixed;
   bottom: 0px;
   color: white;
@@ -77,6 +69,7 @@ td {
   font-size: 12px;
 }
 .footer span {
+  white-space: nowrap;
   margin-right: 10px;
 }
 .footer code {
@@ -89,6 +82,7 @@ td {
   display: inline-block;
 }
 .footer a {
+  white-space: nowrap;
   color: var(--accent-fg);
   display: inline-block;
 }

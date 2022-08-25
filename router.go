@@ -213,8 +213,8 @@ func GettitRouter(opts RouterOptions) *gin.Engine {
 	r := gin.Default()
 	r.GET("/", cache.CacheByRequestURI(memCache, getCacheTime), routeGetIndex)
 	r.GET("/about", cache.CacheByRequestURI(memCache, getCacheTime), routeGetAbout)
-	r.GET("/subs", routeSubsList)
-	r.GET("/subs/:subId", routeSubThreads)
+	r.GET("/subs", cache.CacheByRequestURI(memCache, getCacheTime), routeSubsList)
+	r.GET("/subs/:subId", cache.CacheByRequestURI(memCache, getCacheTime), routeSubThreads)
 	r.GET("/health", func(c *gin.Context) {
 		c.String(http.StatusOK, "API is live.")
 	})
